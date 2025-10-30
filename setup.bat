@@ -63,9 +63,9 @@ echo To start Jupyter Notebook, run:
 echo   jupyter notebook
 echo.
 echo To run the training script:
-echo   python train.py
+echo   python train_unet.py
 echo.
 echo To run the test script:
-echo   python test.py
+echo   python test_unet.py
 echo.
 pause

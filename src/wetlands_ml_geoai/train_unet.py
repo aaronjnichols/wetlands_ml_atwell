@@ -1,18 +1,20 @@
 ﻿"""UNet-based semantic segmentation training entry point for wetlands_ml_geoai."""
 import argparse
+import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional, Tuple
-
-from pathlib import Path
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Sequence, Tuple, Any, Dict, List, Set
 
 import numpy as np
 import rasterio
 
 from .stacking import load_manifest
-from .train import strtobool
+
+
+def strtobool(value: str) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "y"}
+
 from .training.unet import train_unet as run_training
 
 DEFAULT_TILE_SIZE = 512
@@ -54,6 +56,96 @@ def parse_target_size(value: Optional[str]) -> Optional[Tuple[int, int]]:
     return height, width
 
 
+def _resolve_manifest_paths(stack_manifest: Optional[str]) -> Sequence[Path]:
+    if stack_manifest is None:
+        return []
+
+    manifest_path = Path(stack_manifest).expanduser().resolve()
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Stack manifest path not found: {manifest_path}")
+
+    resolved: List[Path] = []
+    _gather_manifest_paths(manifest_path, resolved, set())
+
+    unique: List[Path] = []
+    seen: Set[Path] = set()
+    for candidate in resolved:
+        path = candidate.resolve()
+        if path not in seen:
+            if not path.exists():
+                raise FileNotFoundError(f"Stack manifest referenced but not found: {path}")
+            seen.add(path)
+            unique.append(path)
+
+    if not unique:
+        raise FileNotFoundError(
+            f"No stack manifest JSON files discovered for path: {manifest_path}"
+        )
+
+    return unique
+
+
+def _gather_manifest_paths(target: Path, results: List[Path], visited: Set[Path]) -> None:
+    normalized = target.resolve()
+    if normalized in visited:
+        return
+    visited.add(normalized)
+
+    if normalized.is_dir():
+        entries = sorted(normalized.iterdir(), key=lambda path: path.name.lower())
+        for child in entries:
+            if child.is_dir() or child.suffix.lower() == ".json":
+                _gather_manifest_paths(child, results, visited)
+        return
+
+    if normalized.suffix.lower() != ".json":
+        return
+
+    data = _load_json(normalized)
+    if data is None:
+        return
+
+    if _is_manifest_index(data):
+        manifests = data.get("manifests", [])
+        parent = normalized.parent
+        for entry in manifests:
+            entry_path = Path(entry)
+            if not entry_path.is_absolute():
+                entry_path = (parent / entry_path).resolve()
+            else:
+                entry_path = entry_path.resolve()
+            _gather_manifest_paths(entry_path, results, visited)
+        return
+
+    if _is_stack_manifest(data):
+        results.append(normalized)
+        return
+
+
+def _load_json(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _is_manifest_index(data: Dict[str, Any]) -> bool:
+    manifests = data.get("manifests")
+    if not isinstance(manifests, list):
+        return False
+    return all(isinstance(item, str) and item for item in manifests)
+
+
+def _is_stack_manifest(data: Dict[str, Any]) -> bool:
+    grid = data.get("grid")
+    sources = data.get("sources")
+    if not isinstance(grid, dict) or "transform" not in grid:
+        return False
+    if not isinstance(sources, list) or not sources:
+        return False
+    return True
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Prepare tiles and train a wetlands UNet semantic segmentation model."
@@ -66,7 +158,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--stack-manifest",
         default=os.getenv("TRAIN_STACK_MANIFEST"),
-        help="Path to a stack manifest JSON (generates multi-band tiles on demand).",
+        help="Path to a stack manifest JSON or directory containing per-AOI manifests.",
     )
     parser.add_argument(
         "--labels",
@@ -258,30 +350,25 @@ def main() -> None:
     if not labels_path.exists():
         raise FileNotFoundError(f"Training labels not found: {labels_path}")
 
-    manifest_path = None
-    if args.stack_manifest:
-        manifest_raw = args.stack_manifest.strip()
-        if manifest_raw.startswith('"') and manifest_raw.endswith('"'):
-            manifest_raw = manifest_raw[1:-1]
-        manifest_path = Path(manifest_raw).expanduser().resolve()
-    stack_manifest = load_manifest(manifest_path) if manifest_path else None
+    manifest_paths = _resolve_manifest_paths(args.stack_manifest)
 
-    if stack_manifest is not None:
-        naip_source = stack_manifest.naip
+    if manifest_paths:
+        first_manifest = load_manifest(manifest_paths[0])
+        naip_source = first_manifest.naip
         if naip_source is None:
             raise ValueError("Stack manifest does not include a NAIP source.")
         base_raster = Path(naip_source.path)
+        default_parent = Path(manifest_paths[0]).parent
     else:
         if args.train_raster is None:
             raise ValueError(
                 "--train-raster must be provided when no stack manifest is supplied."
             )
         base_raster = Path(args.train_raster).expanduser().resolve()
+        if not base_raster.exists():
+            raise FileNotFoundError(f"Training raster not found: {base_raster}")
+        default_parent = base_raster.parent
 
-    if not base_raster.exists():
-        raise FileNotFoundError(f"Training raster not found: {base_raster}")
-
-    default_parent = manifest_path.parent if manifest_path else base_raster.parent
     tiles_dir = (
         Path(args.tiles_dir).expanduser().resolve()
         if args.tiles_dir
@@ -308,7 +395,7 @@ def main() -> None:
         train_raster=base_raster,
         tiles_dir=tiles_dir,
         models_dir=models_dir,
-        stack_manifest_path=manifest_path,
+        stack_manifest_path=manifest_paths,
         tile_size=args.tile_size,
         stride=args.stride,
         buffer_radius=args.buffer,

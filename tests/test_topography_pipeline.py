@@ -11,7 +11,7 @@ from wetlands_ml_geoai.topography.config import TopographyStackConfig
 from wetlands_ml_geoai.topography.processing import _compute_tpi, write_topography_raster
 
 
-def test_write_topography_raster_writes_four_bands(tmp_path: Path) -> None:
+def test_write_topography_raster_writes_five_bands(tmp_path: Path) -> None:
     dem_path = tmp_path / "dem.tif"
     transform = rasterio.transform.from_origin(0, 10, 1, 1)
     profile = {
@@ -39,9 +39,9 @@ def test_write_topography_raster_writes_four_bands(tmp_path: Path) -> None:
 
     assert result.exists()
     with rasterio.open(result) as src:
-        assert src.count == 4
-        names = [src.get_band_description(i) for i in range(1, 5)]
-        assert names == ["Slope", "TPI_small", "TPI_large", "DepressionDepth"]
+        assert src.count == 5
+        names = list(src.descriptions)
+        assert names == ["Elevation", "Slope", "TPI_small", "TPI_large", "DepressionDepth"]
 
 
 def _legacy_tpi(dem: np.ndarray, radius: float, pixel_size: float) -> np.ndarray:

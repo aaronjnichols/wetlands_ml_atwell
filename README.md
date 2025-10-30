@@ -1,11 +1,11 @@
 ﻿# Wetlands ML GeoAI
 
-Core pipelines for generating Sentinel-2 seasonal composites, stacking with NAIP imagery, training Mask R-CNN and UNet semantic segmentation models, and running inference.
+Core pipelines for generating Sentinel-2 seasonal composites, stacking with NAIP imagery, training UNet semantic segmentation models, and running inference.
 
 ## Project Layout
 
 - `src/wetlands_ml_geoai/` - reusable Python modules for compositing, stacking, training, inference, and validation.
-- `train.py`, `train_unet.py`, `test.py`, `test_unet.py`, `sentinel2_processing.py`, `validate_seasonal_pixels.py` - thin CLI shims that delegate to the package modules.
+- `train_unet.py`, `test_unet.py`, `sentinel2_processing.py`, `validate_seasonal_pixels.py` - thin CLI shims that delegate to the package modules.
 - `tools/` - utility scripts that support local workflows (for example NAIP downloads).
 - `scripts/windows/` - Windows batch launchers for common tasks.
 - `docs/` - detailed project guidelines and background notes.
@@ -20,8 +20,6 @@ Core pipelines for generating Sentinel-2 seasonal composites, stacking with NAIP
 ```bash
 python setup.bat
 python sentinel2_processing.py --help
-python train.py --help
-python test.py --help
 python train_unet.py --help
 python test_unet.py --help
 
@@ -30,7 +28,6 @@ Add `--auto-download-naip` and `--auto-download-wetlands` to let the pipeline pu
 
 ## Model Options
 
-- **Mask R-CNN (`train.py` / `test.py`)** - instance segmentation suited to delineating discrete wetland polygons with object-level predictions; best when training labels emphasise individual footprint separation.
 - **UNet semantic segmentation (`train_unet.py` / `test_unet.py`)** - pixel-wise classification built on segmentation-models-pytorch; ideal when labels are rasterised masks or continuous wetland regions that benefit from dense coverage.
 
 Run `python -m wetlands_ml_geoai.<module>` if you prefer module execution.

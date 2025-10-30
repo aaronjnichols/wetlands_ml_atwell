@@ -6,13 +6,26 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, Sequence
+from typing import Dict, Iterable, Optional, Sequence
+
+from dataclasses import dataclass
 
 import numpy as np
 import rasterio
 
 from ..stacking import FLOAT_NODATA
 from .progress import format_duration
+
+
+@dataclass(frozen=True)
+class ManifestEntry:
+    """Captures per-AOI stack component paths."""
+
+    naip_path: Path
+    sentinel_path: Path
+    reference_profile: Dict[str, any]
+    extra_sources: Optional[Sequence[Dict[str, any]]] = None
+
 
 NAIP_BAND_LABELS = ["NAIP_R", "NAIP_G", "NAIP_B", "NAIP_NIR"]
 
@@ -101,5 +114,28 @@ def write_stack_manifest(
     return manifest_path
 
 
-__all__ = ["affine_to_list", "compute_naip_scaling", "write_stack_manifest"]
+def write_manifest_index(manifest_paths: Iterable[Path], output_dir: Path) -> Path:
+    """Persist an index JSON listing per-AOI manifest paths."""
+
+    manifest_list = [str(Path(path).resolve()) for path in manifest_paths]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    index_payload = {
+        "version": 1,
+        "created_utc": datetime.utcnow().isoformat() + "Z",
+        "count": len(manifest_list),
+        "manifests": manifest_list,
+    }
+    index_path = output_dir / "manifest_index.json"
+    index_path.write_text(json.dumps(index_payload, indent=2), encoding="utf-8")
+    logging.info("Manifest index written -> %s", index_path)
+    return index_path
+
+
+__all__ = [
+    "ManifestEntry",
+    "affine_to_list",
+    "compute_naip_scaling",
+    "write_stack_manifest",
+    "write_manifest_index",
+]
 

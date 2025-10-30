@@ -2,15 +2,23 @@
 
 import pytest
 
-from wetlands_ml_geoai import test as test_mask_rcnn
 from wetlands_ml_geoai import test_unet
 
 
-@pytest.mark.parametrize(
-    "module",
-    [test_mask_rcnn, test_unet],
-)
-def test_inference_cli_requires_inputs(module):
+def test_inference_cli_requires_inputs():
     with pytest.raises(SystemExit):
-        module.parse_args([])
+        test_unet.parse_args([])
 
+
+def test_unet_probability_threshold_parses():
+    args = test_unet.parse_args(
+        [
+            "--stack-manifest",
+            "dummy.json",
+            "--model-path",
+            "model.pth",
+            "--probability-threshold",
+            "0.25",
+        ]
+    )
+    assert args.probability_threshold == pytest.approx(0.25)

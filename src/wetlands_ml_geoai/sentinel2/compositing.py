@@ -7,6 +7,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -20,9 +21,11 @@ from dask import compute as dask_compute
 from pystac import Item
 from pystac_client import Client
 from rasterio.errors import RasterioIOError
+from rasterio.mask import mask
 from rasterio.merge import merge
+from rasterio.warp import transform_geom
 from shapely import wkt
-from shapely.geometry import box, mapping, shape
+from shapely.geometry import MultiPolygon, Polygon, box, mapping, shape
 from shapely.geometry.base import BaseGeometry
 from skimage.morphology import binary_dilation
 
@@ -36,7 +39,7 @@ from ..data_acquisition import (
 )
 from ..stacking import FLOAT_NODATA
 from ..topography import TopographyStackConfig, prepare_topography_stack
-from .manifests import NAIP_BAND_LABELS, write_stack_manifest
+from .manifests import NAIP_BAND_LABELS, write_manifest_index, write_stack_manifest
 from .progress import LoggingProgressBar, RasterProgress, format_duration
 
 SENTINEL_COLLECTION = "sentinel-2-l2a"
@@ -73,6 +76,26 @@ def collect_naip_sources(candidates: Sequence[Path]) -> List[Path]:
             seen.add(resolved)
             unique.append(resolved)
     return unique
+
+
+@lru_cache(maxsize=None)
+def _load_naip_footprint(path: str) -> Polygon:
+    with rasterio.open(path) as dataset:
+        if dataset.crs is None:
+            raise ValueError(f"NAIP raster '{path}' is missing CRS information.")
+        bounds = dataset.bounds
+        footprint = box(bounds.left, bounds.bottom, bounds.right, bounds.top)
+        geojson = mapping(footprint)
+        footprint_wgs84 = transform_geom(dataset.crs, "EPSG:4326", geojson)
+    return shape(footprint_wgs84)
+
+
+def _collect_naip_footprints(sources: Sequence[Path]) -> List[Tuple[Path, Polygon]]:
+    footprints: List[Tuple[Path, Polygon]] = []
+    for source in sources:
+        polygon = _load_naip_footprint(str(Path(source).resolve()))
+        footprints.append((Path(source), polygon))
+    return footprints
 
 
 def prepare_naip_reference(
@@ -211,6 +234,88 @@ def parse_aoi(aoi: str) -> BaseGeometry:
     if not geom.is_valid:
         geom = geom.buffer(0)
     return geom
+
+
+def _buffer_in_meters(geom: BaseGeometry, buffer_meters: float) -> BaseGeometry:
+    if buffer_meters <= 0:
+        return geom
+    series = gpd.GeoSeries([geom], crs="EPSG:4326")
+    projected = series.to_crs(series.estimate_utm_crs())
+    buffered = projected.buffer(buffer_meters)
+    return buffered.to_crs(4326).iloc[0]
+
+
+def extract_aoi_polygons(aoi: BaseGeometry, buffer_meters: float = 0.0) -> List[Polygon]:
+    """Return individual AOI polygons (optionally buffered in meters)."""
+
+    if isinstance(aoi, Polygon):
+        parts: List[BaseGeometry] = [aoi]
+    elif isinstance(aoi, MultiPolygon):
+        parts = list(aoi.geoms)
+    else:
+        parts = [shape(mapping(aoi))]
+
+    result: List[Polygon] = []
+    for part in parts:
+        candidate = _buffer_in_meters(part, buffer_meters)
+        if candidate.is_empty:
+            continue
+        if not candidate.is_valid:
+            candidate = candidate.buffer(0)
+        if isinstance(candidate, Polygon):
+            result.append(candidate)
+        elif isinstance(candidate, MultiPolygon):
+            for poly in candidate.geoms:
+                if not poly.is_empty:
+                    result.append(poly)
+        else:
+            candidate_poly = candidate.convex_hull
+            if isinstance(candidate_poly, Polygon) and not candidate_poly.is_empty:
+                result.append(candidate_poly)
+
+    if not result:
+        raise ValueError("No valid AOI polygons extracted.")
+    return result
+
+
+def _clip_raster_to_polygon(
+    raster_path: Path,
+    polygon: BaseGeometry,
+    destination: Path,
+) -> Dict[str, Any]:
+    """Clip ``raster_path`` to ``polygon`` and persist to ``destination``."""
+
+    with rasterio.open(raster_path) as src:
+        if src.crs is None:
+            raise ValueError(f"Raster {raster_path} lacks CRS metadata for clipping.")
+        geom_src = transform_geom("EPSG:4326", src.crs, mapping(polygon))
+        data, transform = mask(src, [geom_src], crop=True)
+        meta = src.meta.copy()
+        meta.update(
+            {
+                "height": data.shape[1],
+                "width": data.shape[2],
+                "transform": transform,
+            }
+        )
+        meta.setdefault("compress", "deflate")
+        meta.setdefault("tiled", True)
+        meta.setdefault("BIGTIFF", "IF_SAFER")
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with rasterio.open(destination, "w", **meta) as dst:
+            dst.write(data)
+            for idx, desc in enumerate(src.descriptions, start=1):
+                if desc:
+                    dst.set_band_description(idx, desc)
+
+        profile = {
+            "crs": src.crs.to_string() if src.crs else None,
+            "transform": transform,
+            "width": data.shape[2],
+            "height": data.shape[1],
+        }
+    return profile
 
 
 def season_date_range(year: int, season: str) -> SeasonConfig:
@@ -429,6 +534,91 @@ def concatenate_seasons(
     return combined.astype("float32"), labels
 
 
+@dataclass(frozen=True)
+class AoiProcessingOutput:
+    index: int
+    directory: Path
+    polygon: Polygon
+    seasonal_data: Dict[str, xr.DataArray]
+    seasonal_labels: Dict[str, List[str]]
+    sentinel_stack_path: Optional[Path]
+    manifest_path: Optional[Path]
+    has_manifest: bool
+
+
+def _iter_aoi_processing(
+    client: Client,
+    polygons: Sequence[Polygon],
+    years: Sequence[int],
+    seasons: Sequence[str],
+    cloud_cover: float,
+    min_clear_obs: int,
+    mask_dilation: int,
+    tiles_per_season: Path,
+) -> Iterable[AoiProcessingOutput]:
+    for index, polygon in enumerate(polygons, start=1):
+        aoi_dir = tiles_per_season / f"aoi_{index:02d}"
+        aoi_dir.mkdir(parents=True, exist_ok=True)
+        seasonal_data: Dict[str, xr.DataArray] = {}
+        seasonal_labels: Dict[str, List[str]] = {}
+        bounds = polygon.bounds
+
+        shapely_mask = polygon
+        mask_cache: Dict[str, Polygon] = {}
+
+        for season in seasons:
+            raster_label = f"AOI {index:02d} :: Sentinel-2 {season}"
+            LOGGER.info("=" * 60)
+            LOGGER.info("%s -- fetching Sentinel-2 scenes", raster_label)
+            LOGGER.info("=" * 60)
+            items = fetch_items(client, polygon, season, years, cloud_cover)
+            LOGGER.info("%s -- found %d scenes", raster_label, len(items))
+
+            if not items:
+                LOGGER.warning("%s -- no Sentinel-2 scenes", raster_label)
+                continue
+
+            median, counts = seasonal_median(items, season, min_clear_obs, bounds, mask_dilation)
+
+            median_crs = median.rio.crs
+            clip_geom = shapely_mask
+            if median_crs is not None:
+                crs_key = median_crs.to_string() if hasattr(median_crs, "to_string") else str(median_crs)
+                clip_geom = mask_cache.get(crs_key)
+                if clip_geom is None:
+                    transformed = transform_geom("EPSG:4326", median_crs, mapping(shapely_mask))
+                    clip_geom = shape(transformed)
+                    mask_cache[crs_key] = clip_geom
+
+            clip_mask = median.rio.clip([mapping(clip_geom)], all_touched=False, drop=False)
+            seasonal_data[season] = median.where(clip_mask.notnull(), FLOAT_NODATA)
+            seasonal_labels[season] = [f"S2_{season}_{band}" for band in SENTINEL_BANDS]
+
+            LOGGER.info(
+                "AOI %s Season %s clear obs stats -> min=%s mean=%.2f max=%s",
+                index,
+                season,
+                int(counts.min().item()),
+                float(counts.mean().item()),
+                int(counts.max().item()),
+            )
+
+            season_path = aoi_dir / f"s2_{season.lower()}_median_7band.tif"
+            write_dataarray(seasonal_data[season], season_path, seasonal_labels[season])
+            LOGGER.info("%s -- wrote %s", raster_label, season_path)
+
+        yield AoiProcessingOutput(
+            index=index,
+            directory=aoi_dir,
+            polygon=polygon,
+            seasonal_data=seasonal_data,
+            seasonal_labels=seasonal_labels,
+            sentinel_stack_path=None,
+            manifest_path=None,
+            has_manifest=False,
+        )
+
+
 def run_pipeline(
     aoi: str,
     years: Sequence[int],
@@ -500,72 +690,86 @@ def run_pipeline(
         wetlands_path = _download_wetlands_delineations(wetlands_request)
         logging.info("Wetlands delineations saved to %s", wetlands_path)
 
-    seasonal_data: Dict[str, xr.DataArray] = {}
-    bounds = geom.bounds
-    progress = RasterProgress(total=len(seasons))
-    for season in seasons:
-        logging.info("=" * 60)
-        logging.info("Processing season %s", season)
-        logging.info("=" * 60)
-        raster_label = f"Sentinel-2 {season} median (7 band)"
+    polygons = extract_aoi_polygons(geom)
+    if not polygons:
+        raise ValueError("No valid AOI polygons extracted.")
 
-        logging.info("Season %s: Fetching Sentinel-2 scenes...", season)
-        items = fetch_items(client, geom, season, years, cloud_cover)
-        logging.info("Season %s: Found %d scenes", season, len(items))
+    manifest_paths: List[Path] = []
+    progress = RasterProgress(total=len(polygons) * (len(seasons) + int(has_naip)))
 
-        if not items:
-            logging.warning("No Sentinel-2 scenes found for season %s", season)
-            progress.skip(raster_label)
+    naip_footprints: Optional[List[Tuple[Path, Polygon]]] = None
+    if has_naip:
+        try:
+            naip_footprints = _collect_naip_footprints(tuple(sorted(naip_sources)))
+        except ValueError as exc:
+            raise RuntimeError(f"Failed to read NAIP footprints: {exc}") from exc
+
+    for output in _iter_aoi_processing(
+        client=client,
+        polygons=polygons,
+        years=years,
+        seasons=seasons,
+        cloud_cover=cloud_cover,
+        min_clear_obs=min_clear_obs,
+        mask_dilation=mask_dilation,
+        tiles_per_season=output_dir,
+    ):
+        index = output.index
+        aoi_dir = output.directory
+        seasonal_data = output.seasonal_data
+        seasonal_labels = output.seasonal_labels
+
+        if len(seasonal_data) != len(seasons):
+            LOGGER.warning("AOI %s: missing one or more seasons; skipping composite.", index)
             continue
 
-        progress.start(raster_label)
-        median, counts = seasonal_median(items, season, min_clear_obs, bounds, mask_dilation)
-        seasonal_data[season] = median
+        composite_label = f"AOI {index:02d} :: Seasonal stack"
+        progress.start(composite_label)
+        combined21, labels21 = concatenate_seasons(seasonal_data, seasons)
+        combined21 = combined21.where(combined21 != FLOAT_NODATA, FLOAT_NODATA)
+        combined21_path = aoi_dir / "s2_sprsumfal_median_21band.tif"
+        write_dataarray(combined21, combined21_path, labels21)
+        progress.finish(composite_label)
 
-        min_count = int(counts.min().item())
-        max_count = int(counts.max().item())
-        mean_count = float(counts.mean().item())
-        logging.info(
-            "Season %s clear obs stats -> min: %s, mean: %.2f, max: %s",
-            season,
-            min_count,
-            mean_count,
-            max_count,
-        )
+        if not has_naip:
+            continue
 
-        band_labels = [f"S2_{season}_{band}" for band in SENTINEL_BANDS]
-        output_path = output_dir / f"s2_{season.lower()}_median_7band.tif"
-        write_dataarray(median, output_path, band_labels)
-        progress.finish(raster_label)
-        logging.info("Season %s: Complete!", season)
-
-    if len(seasonal_data) != len(seasons):
-        logging.warning("Skipping multi-season outputs; not all seasons were generated.")
-        return
-
-    progress.extend(1 + int(has_naip))
-    composite_label = "Seasonal 21-band stack"
-    progress.start(composite_label)
-    combined21, labels21 = concatenate_seasons(seasonal_data, seasons)
-    combined21_path = output_dir / "s2_sprsumfal_median_21band.tif"
-    write_dataarray(combined21, combined21_path, labels21)
-    progress.finish(composite_label)
-
-    if has_naip:
-        stack_label = "Stack manifest generation"
+        stack_label = f"AOI {index:02d} :: Stack manifest"
         progress.start(stack_label)
-        naip_reference_path, reference_profile, naip_band_labels = prepare_naip_reference(
-            naip_sources,
-            output_dir,
+        filtered_naip_sources = naip_sources
+        if naip_footprints is not None:
+            filtered_naip_sources = [
+                path
+                for path, footprint in naip_footprints
+                if footprint.intersects(output.polygon)
+            ]
+            if not filtered_naip_sources:
+                LOGGER.warning(
+                    "AOI %s: no NAIP tiles intersect polygon; skipping composite and manifest.",
+                    index,
+                )
+                progress.finish(stack_label)
+                continue
+            LOGGER.info(
+                "AOI %s: using %d NAIP tile(s) after footprint filtering.",
+                index,
+                len(filtered_naip_sources),
+            )
+        naip_reference_path, _, naip_band_labels = prepare_naip_reference(
+            filtered_naip_sources,
+            aoi_dir,
             target_resolution=naip_target_resolution,
         )
+
+        clipped_naip_path = aoi_dir / "naip_clipped.tif"
+        reference_profile = _clip_raster_to_polygon(naip_reference_path, output.polygon, clipped_naip_path)
+
         extra_sources = None
-        topography_path: Optional[Path] = None
         if auto_download_topography:
-            topo_output_dir = output_dir / "topography"
+            topo_output_dir = aoi_dir / "topography"
             topo_config = TopographyStackConfig(
-                aoi=geom,
-                target_grid_path=naip_reference_path,
+                aoi=output.polygon,
+                target_grid_path=clipped_naip_path,
                 output_dir=topo_output_dir,
                 buffer_meters=topography_buffer_meters,
                 tpi_small_radius=topography_tpi_small,
@@ -578,6 +782,7 @@ def run_pipeline(
                     "type": "topography",
                     "path": str(topography_path.resolve()),
                     "band_labels": [
+                        "Elevation",
                         "Slope",
                         "TPI_small",
                         "TPI_large",
@@ -588,19 +793,23 @@ def run_pipeline(
                     "description": topo_config.description,
                 }
             ]
+
         manifest_path = write_stack_manifest(
-            output_dir=output_dir,
-            naip_path=naip_reference_path,
+            output_dir=aoi_dir,
+            naip_path=clipped_naip_path,
             naip_labels=naip_band_labels,
             sentinel_path=combined21_path,
             sentinel_labels=labels21,
             reference_profile=reference_profile,
             extra_sources=extra_sources,
         )
+        manifest_paths.append(manifest_path)
         progress.finish(stack_label)
-        logging.info("Stack manifest written to %s", manifest_path)
-        if topography_path:
-            logging.info("Topography raster stored at %s", topography_path)
+        LOGGER.info("AOI %s: manifest written -> %s", index, manifest_path)
+
+    if manifest_paths:
+        index_path = write_manifest_index(manifest_paths, output_dir)
+        LOGGER.info("Manifest index created -> %s", index_path)
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> None:

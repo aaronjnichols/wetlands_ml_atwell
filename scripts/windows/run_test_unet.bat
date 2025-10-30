@@ -15,10 +15,10 @@ rem Change to project root directory (2 levels up from scripts\windows)
 cd /d "%~dp0..\.."
 if errorlevel 1 goto :fail
 
-set "STACK_MANIFEST=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Test_Model_Data_FL\20251014_Model\s2\stack_manifest.json"
+set "STACK_MANIFEST=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\s2_test\aoi_01\stack_manifest.json"
 set "TEST_RASTER="
-set "MODEL_PATH=C:\_Python\wetlands_ml_codex\wetlands_ml_codex\scripts\windows\data\models_unet\best_model.pth"
-set "OUTPUT_DIR=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Test_Model_Data_FL\20251014_Model\unet_predictions"
+set "MODEL_PATH=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\s2_train\models\best_model.pth"
+set "OUTPUT_DIR=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\s2_test"
 set "MASK_PATH="
 set "VECTOR_PATH="
 set "WINDOW_SIZE=512"
@@ -30,6 +30,7 @@ set "ARCHITECTURE=unet"
 set "ENCODER_NAME=resnet34"
 set "MIN_AREA=100"
 set "SIMPLIFY=1.0"
+set "PROB_THRESHOLD=0.5"
 set "LOG_LEVEL=INFO"
 
 if "%MODEL_PATH%"=="" goto :missing_model
@@ -79,10 +80,13 @@ if not "%MIN_AREA%"=="" set "MIN_AREA_ARG=--min-area %MIN_AREA%"
 set "SIMPLIFY_ARG="
 if not "%SIMPLIFY%"=="" set "SIMPLIFY_ARG=--simplify-tolerance %SIMPLIFY%"
 
+set "PROB_THRESHOLD_ARG="
+if not "%PROB_THRESHOLD%"=="" set "PROB_THRESHOLD_ARG=--probability-threshold %PROB_THRESHOLD%"
+
 set "LOG_LEVEL_ARG="
 if not "%LOG_LEVEL%"=="" set "LOG_LEVEL_ARG=--log-level %LOG_LEVEL%"
 
-python test_unet.py %STACK_ARG% %RASTER_ARG% --model-path "%MODEL_PATH%" --output-dir "%OUTPUT_DIR%" %MASK_ARG% %VECTOR_ARG% %WINDOW_ARG% %OVERLAP_ARG% %BATCH_ARG% %NUM_CHANNELS_ARG% %NUM_CLASSES_ARG% %ARCH_ARG% %ENCODER_ARG% %MIN_AREA_ARG% %SIMPLIFY_ARG% %LOG_LEVEL_ARG%
+python test_unet.py %STACK_ARG% %RASTER_ARG% --model-path "%MODEL_PATH%" --output-dir "%OUTPUT_DIR%" %MASK_ARG% %VECTOR_ARG% %WINDOW_ARG% %OVERLAP_ARG% %BATCH_ARG% %NUM_CHANNELS_ARG% %NUM_CLASSES_ARG% %ARCH_ARG% %ENCODER_ARG% %MIN_AREA_ARG% %SIMPLIFY_ARG% %PROB_THRESHOLD_ARG% %LOG_LEVEL_ARG%
 if errorlevel 1 goto :py_fail
 
 echo [INFO] UNet inference complete. Outputs saved to %OUTPUT_DIR%

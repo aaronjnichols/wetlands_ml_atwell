@@ -108,6 +108,16 @@ def parse_args() -> argparse.Namespace:
         help="Douglas-Peucker tolerance for geometry simplification.",
     )
     parser.add_argument(
+        "--probability-threshold",
+        type=float,
+        default=(
+            float(os.getenv("UNET_PROBABILITY_THRESHOLD"))
+            if os.getenv("UNET_PROBABILITY_THRESHOLD") is not None
+            else None
+        ),
+        help="Optional positive-class probability threshold for binary predictions (default uses argmax).",
+    )
+    parser.add_argument(
         "--log-level",
         default=os.getenv("LOG_LEVEL", "INFO"),
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -174,6 +184,7 @@ def main() -> None:
             architecture=args.architecture,
             encoder_name=args.encoder_name,
             num_classes=args.num_classes,
+            probability_threshold=args.probability_threshold,
         )
     else:
         assert args.test_raster is not None  # for type-checkers
@@ -196,6 +207,7 @@ def main() -> None:
             window_size=args.window_size,
             overlap=args.overlap,
             batch_size=args.batch_size,
+            probability_threshold=args.probability_threshold,
         )
 
     logging.info("Raster predictions written to %s", masks_path)

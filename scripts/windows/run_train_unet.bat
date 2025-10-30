@@ -7,16 +7,16 @@ cd /d "%~dp0..\.."
 REM ------------------------------------------------------------------
 REM Edit the values below to match your training setup before running.
 REM ------------------------------------------------------------------
-set "STACK_MANIFEST=data\s2\topo\stack_manifest.json"
+set "STACK_MANIFEST=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\s2_train"
 set "TRAIN_RASTER="
-set "LABELS=scripts\windows\data\wetlands\train_wetlands.gpkg"
-set "TILES_DIR=scripts\windows\data\tiles"
-set "MODELS_DIR=scripts\windows\data\models_unet"
+set "LABELS=C:\Users\anichols\Downloads\MI_geopackage_wetlands\MI_Wetlands_Geopackage.gpkg"
+set "TILES_DIR=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\tiles"
+set "MODELS_DIR=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\models"
 set "TILE_SIZE=512"
 set "STRIDE=256"
 set "BUFFER=0"
 set "BATCH_SIZE=4"
-set "EPOCHS=10"
+set "EPOCHS=20"
 set "LEARNING_RATE=0.0001"
 set "WEIGHT_DECAY=0.0001"
 set "VAL_SPLIT=0.2"
@@ -61,16 +61,16 @@ if errorlevel 1 (
 )
 
 set "STACK_ARG="
-if not "%STACK_MANIFEST%"=="" set "STACK_ARG=--stack-manifest \"%STACK_MANIFEST%\""
+if not "%STACK_MANIFEST%"=="" set "STACK_ARG=--stack-manifest ""%STACK_MANIFEST%"""
 
 set "RASTER_ARG="
-if not "%TRAIN_RASTER%"=="" set "RASTER_ARG=--train-raster \"%TRAIN_RASTER%\""
+if not "%TRAIN_RASTER%"=="" set "RASTER_ARG=--train-raster ""%TRAIN_RASTER%"""
 
 set "NUM_CHANNELS_ARG="
 if not "%NUM_CHANNELS%"=="" set "NUM_CHANNELS_ARG=--num-channels %NUM_CHANNELS%"
 
 set "TARGET_SIZE_ARG="
-if not "%TARGET_SIZE%"=="" set "TARGET_SIZE_ARG=--target-size \"%TARGET_SIZE%\""
+if not "%TARGET_SIZE%"=="" set "TARGET_SIZE_ARG=--target-size ""%TARGET_SIZE%"""
 
 set "NUM_WORKERS_ARG="
 if not "%NUM_WORKERS%"=="" set "NUM_WORKERS_ARG=--num-workers %NUM_WORKERS%"
@@ -87,11 +87,11 @@ set "ENCODER_FLAG="
 if /I "%USE_ENCODER_WEIGHTS%"=="false" (
     set "ENCODER_FLAG=--no-encoder-weights"
 ) else if not "%ENCODER_WEIGHTS%"=="" (
-    set "ENCODER_FLAG=--encoder-weights \"%ENCODER_WEIGHTS%\""
+    set "ENCODER_FLAG=--encoder-weights ""%ENCODER_WEIGHTS%"""
 )
 
 set "CHECKPOINT_ARG="
-if not "%CHECKPOINT_PATH%"=="" set "CHECKPOINT_ARG=--checkpoint-path \"%CHECKPOINT_PATH%\""
+if not "%CHECKPOINT_PATH%"=="" set "CHECKPOINT_ARG=--checkpoint-path ""%CHECKPOINT_PATH%"""
 
 set "RESUME_FLAG="
 if /I "%RESUME_TRAINING%"=="true" set "RESUME_FLAG=--resume-training"

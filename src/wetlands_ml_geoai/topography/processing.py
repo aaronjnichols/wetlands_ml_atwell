@@ -12,6 +12,8 @@ from rasterio import warp
 from rasterio.enums import Resampling
 from rasterio.merge import merge
 from rasterio.transform import Affine
+from rasterio.crs import CRS
+from rasterio.vrt import WarpedVRT
 from scipy import ndimage
 
 from ..stacking import FLOAT_NODATA
@@ -33,9 +35,37 @@ def _mosaic_dem(paths: Iterable[Path], target_transform: Affine, target_width: i
     if not datasets:
         raise ValueError("No DEM tiles provided")
     src_crs = datasets[0].crs
+
+    dst_crs = None
+    if target_crs:
+        try:
+            dst_crs = CRS.from_user_input(target_crs)
+        except ValueError:
+            LOGGER.warning("Failed to parse target CRS '%s'; falling back to source CRS", target_crs)
+    if dst_crs is None:
+        dst_crs = src_crs
+    if dst_crs is None:
+        raise RuntimeError("Target grid does not define a CRS and DEM sources are missing CRS metadata")
+    vrt_datasets: list[WarpedVRT] = []
     try:
-        mosaicked, transform = merge(datasets, nodata=np.nan)
+        merge_sources = datasets
+        if any(ds.crs != dst_crs for ds in datasets):
+            vrt_opts = {
+                "crs": dst_crs,
+                "resampling": Resampling.bilinear,
+            }
+            if target_transform is not None and target_width and target_height:
+                vrt_opts.update(
+                    transform=target_transform,
+                    width=target_width,
+                    height=target_height,
+                )
+            vrt_datasets = [WarpedVRT(ds, **vrt_opts) for ds in datasets]
+            merge_sources = vrt_datasets
+        mosaicked, transform = merge(merge_sources, nodata=np.nan)
     finally:
+        for vrt in vrt_datasets:
+            vrt.close()
         for dataset in datasets:
             dataset.close()
     result = np.full((target_height, target_width), np.nan, dtype="float32")
@@ -43,9 +73,9 @@ def _mosaic_dem(paths: Iterable[Path], target_transform: Affine, target_width: i
         source=mosaicked[0],
         destination=result,
         src_transform=transform,
-        src_crs=src_crs,
+        src_crs=dst_crs,
         dst_transform=target_transform,
-        dst_crs=target_crs,
+        dst_crs=dst_crs,
         resampling=Resampling.bilinear,
     )
     return result
@@ -108,6 +138,8 @@ def write_topography_raster(config: TopographyStackConfig, dem_paths: Iterable[P
     )
     dem = _mosaic_dem(dem_paths_list, transform, width, height, crs)
     dem_mask = np.isnan(dem)
+    elevation = dem.astype("float32", copy=True)
+    elevation[dem_mask] = FLOAT_NODATA
 
     LOGGER.info("Computing slope raster")
     slope = _compute_slope(dem, pixel_size)
@@ -129,7 +161,7 @@ def write_topography_raster(config: TopographyStackConfig, dem_paths: Iterable[P
         "driver": "GTiff",
         "height": height,
         "width": width,
-        "count": 4,
+        "count": 5,
         "dtype": "float32",
         "transform": transform,
         "crs": crs,
@@ -139,16 +171,17 @@ def write_topography_raster(config: TopographyStackConfig, dem_paths: Iterable[P
         "BIGTIFF": "IF_SAFER",
     }
 
-    bands = np.stack([slope, tpi_small, tpi_large, depression])
+    bands = np.stack([elevation, slope, tpi_small, tpi_large, depression])
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     LOGGER.info("Writing derivatives -> %s", output_path)
     with rasterio.open(output_path, "w", **profile) as dst:
         dst.write(bands)
-        dst.set_band_description(1, "Slope")
-        dst.set_band_description(2, "TPI_small")
-        dst.set_band_description(3, "TPI_large")
-        dst.set_band_description(4, "DepressionDepth")
+        dst.set_band_description(1, "Elevation")
+        dst.set_band_description(2, "Slope")
+        dst.set_band_description(3, "TPI_small")
+        dst.set_band_description(4, "TPI_large")
+        dst.set_band_description(5, "DepressionDepth")
 
     LOGGER.info("Wrote topography raster -> %s", output_path)
     return output_path
