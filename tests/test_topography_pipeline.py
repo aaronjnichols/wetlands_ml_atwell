@@ -7,7 +7,10 @@ import rasterio
 from scipy import ndimage
 from shapely.geometry import box
 
+import pytest
+
 from wetlands_ml_geoai.topography.config import TopographyStackConfig
+from wetlands_ml_geoai.topography.pipeline import prepare_topography_stack
 from wetlands_ml_geoai.topography.processing import _compute_tpi, write_topography_raster
 
 
@@ -64,4 +67,46 @@ def test_compute_tpi_matches_previous_implementation() -> None:
 
         mask = np.isfinite(legacy)
         assert np.allclose(current[mask], legacy[mask], atol=1e-3)
+
+
+def test_prepare_topography_stack_uses_local_dems(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dem_path = tmp_path / "dem_local.tif"
+    transform = rasterio.transform.from_origin(0, 10, 1, 1)
+    profile = {
+        "driver": "GTiff",
+        "height": 8,
+        "width": 8,
+        "count": 1,
+        "dtype": "float32",
+        "transform": transform,
+        "crs": "EPSG:32618",
+    }
+    data = np.linspace(0, 100, 64, dtype="float32").reshape(8, 8)
+    with rasterio.open(dem_path, "w", **profile) as dst:
+        dst.write(data, 1)
+
+    def _should_not_run(*args, **kwargs):  # pragma: no cover - safety
+        raise AssertionError("Remote DEM fetching should be skipped when dem_paths are provided")
+
+    monkeypatch.setattr(
+        "wetlands_ml_geoai.topography.pipeline.fetch_dem_inventory",
+        _should_not_run,
+    )
+    monkeypatch.setattr(
+        "wetlands_ml_geoai.topography.pipeline.download_dem_products",
+        _should_not_run,
+    )
+
+    output_dir = tmp_path / "topography"
+    config = TopographyStackConfig(
+        aoi=box(0, 0, 8, 8),
+        target_grid_path=dem_path,
+        output_dir=output_dir,
+        buffer_meters=0.0,
+        dem_paths=(dem_path,),
+    )
+
+    result = prepare_topography_stack(config)
+    assert result.exists()
+    assert result.parent == output_dir
 

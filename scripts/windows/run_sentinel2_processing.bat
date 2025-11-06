@@ -7,11 +7,11 @@ cd /d "%~dp0..\.."
 REM ------------------------------------------------------------------
 REM Edit the values below to match your project before running.
 REM ------------------------------------------------------------------
-set "AOI_PATH=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\AOIs.gpkg"
+set "AOI_PATH=data\00_small_model_train_test\s2_test_topo\test_aoi.gpkg"
 set "YEARS=2021 2022 2023"
-set "OUTPUT_DIR=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\s2_train"
+set "OUTPUT_DIR=data\00_small_model_train_test\s2_test_topo"
 set "SEASONS=SPR SUM FAL"
-set "NAIP_PATH=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\naip_tiles"
+set "NAIP_PATH=data\00_small_model_train_test\s2_test_topo\m_4308404_nw_16_060_20220810.tif"
 set "CLOUD_COVER=60"
 set "MIN_CLEAR_OBS=3"
 set "MASK_DILATION=0"
@@ -24,23 +24,24 @@ set "AUTO_DOWNLOAD_NAIP_YEAR=2022"
 set "AUTO_DOWNLOAD_NAIP_MAX_ITEMS=1"
 set "AUTO_DOWNLOAD_NAIP_OVERWRITE=false"
 set "AUTO_DOWNLOAD_NAIP_PREVIEW=false"
-set "AUTO_DOWNLOAD_WETLANDS=true"
-set "WETLANDS_OUTPUT=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\test_wetlands.gpkg"
+set "AUTO_DOWNLOAD_WETLANDS=false"
+set "WETLANDS_OUTPUT="
 set "WETLANDS_OVERWRITE=false"
 set "NAIP_TARGET_RESOLUTION="
-set "AUTO_DOWNLOAD_TOPOGRAPHY=false"
+set "AUTO_DOWNLOAD_TOPOGRAPHY=true"
 set "TOPOGRAPHY_BUFFER_METERS="
 set "TOPOGRAPHY_TPI_SMALL="
 set "TOPOGRAPHY_TPI_LARGE="
 set "TOPOGRAPHY_CACHE_DIR="
+set "TOPOGRAPHY_DEM_DIR=data\00_small_model_train_test\s2_test_topo\dem"
 
-if not exist "venv\Scripts\activate.bat" (
+if not exist "venv312\Scripts\activate.bat" (
     echo [ERROR] Python virtual environment not found. Run setup.bat first.
     pause
     exit /b 1
 )
 
-call "venv\Scripts\activate.bat"
+call "venv312\Scripts\activate.bat"
 
 set "NAIP_ARG="
 if not "%NAIP_PATH%"=="" set "NAIP_ARG=--naip-path "%NAIP_PATH%""
@@ -75,12 +76,14 @@ set "TOPO_BUFFER_ARG="
 set "TOPO_SMALL_ARG="
 set "TOPO_LARGE_ARG="
 set "TOPO_CACHE_ARG="
+set "TOPO_DEM_ARG="
 if /I "%AUTO_DOWNLOAD_TOPOGRAPHY%"=="true" (
     set "AUTO_TOPO_FLAG=--auto-download-topography"
     if not "%TOPOGRAPHY_BUFFER_METERS%"=="" set "TOPO_BUFFER_ARG=--topography-buffer-meters %TOPOGRAPHY_BUFFER_METERS%"
     if not "%TOPOGRAPHY_TPI_SMALL%"=="" set "TOPO_SMALL_ARG=--topography-tpi-small %TOPOGRAPHY_TPI_SMALL%"
     if not "%TOPOGRAPHY_TPI_LARGE%"=="" set "TOPO_LARGE_ARG=--topography-tpi-large %TOPOGRAPHY_TPI_LARGE%"
     if not "%TOPOGRAPHY_CACHE_DIR%"=="" set "TOPO_CACHE_ARG=--topography-cache-dir "%TOPOGRAPHY_CACHE_DIR%""
+    if not "%TOPOGRAPHY_DEM_DIR%"=="" set "TOPO_DEM_ARG=--topography-dem-dir "%TOPOGRAPHY_DEM_DIR%""
 )
 
 python "sentinel2_processing.py" ^
@@ -103,6 +106,7 @@ python "sentinel2_processing.py" ^
     %TOPO_SMALL_ARG% ^
     %TOPO_LARGE_ARG% ^
     %TOPO_CACHE_ARG% ^
+    %TOPO_DEM_ARG% ^
     --cloud-cover %CLOUD_COVER% ^
     --min-clear-obs %MIN_CLEAR_OBS% ^
     --mask-dilation %MASK_DILATION% ^

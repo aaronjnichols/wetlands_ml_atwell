@@ -7,16 +7,16 @@ cd /d "%~dp0..\.."
 REM ------------------------------------------------------------------
 REM Edit the values below to match your training setup before running.
 REM ------------------------------------------------------------------
-set "STACK_MANIFEST=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\s2_train"
+set "STACK_MANIFEST=data\00_small_model_train_test\s2_train_topo"
 set "TRAIN_RASTER="
-set "LABELS=C:\Users\anichols\Downloads\MI_geopackage_wetlands\MI_Wetlands_Geopackage.gpkg"
-set "TILES_DIR=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\tiles"
-set "MODELS_DIR=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\models"
+set "LABELS=data\mi_nwi_wetlands.gpkg"
+set "TILES_DIR=data\00_small_model_train_test\tiles"
+set "MODELS_DIR=data\00_small_model_train_test\models"
 set "TILE_SIZE=512"
 set "STRIDE=256"
 set "BUFFER=0"
 set "BATCH_SIZE=4"
-set "EPOCHS=20"
+set "EPOCHS=1"
 set "LEARNING_RATE=0.0001"
 set "WEIGHT_DECAY=0.0001"
 set "VAL_SPLIT=0.2"
@@ -47,13 +47,13 @@ if "%STACK_MANIFEST%"=="" if "%TRAIN_RASTER%"=="" (
     exit /b 1
 )
 
-if not exist "venv\Scripts\activate.bat" (
+if not exist "venv312\Scripts\activate.bat" (
     echo [ERROR] Python virtual environment not found. Run setup.bat first.
     pause
     exit /b 1
 )
 
-call "venv\Scripts\activate.bat"
+call "venv312\Scripts\activate.bat"
 if errorlevel 1 (
     echo [ERROR] Failed to activate virtual environment.
     pause

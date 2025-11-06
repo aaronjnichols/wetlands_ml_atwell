@@ -15,10 +15,10 @@ rem Change to project root directory (2 levels up from scripts\windows)
 cd /d "%~dp0..\.."
 if errorlevel 1 goto :fail
 
-set "STACK_MANIFEST=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\s2_test\aoi_01\stack_manifest.json"
+set "STACK_MANIFEST=data\00_small_model_train_test\s2_test_topo\aoi_01\stack_manifest.json"
 set "TEST_RASTER="
-set "MODEL_PATH=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\s2_train\models\best_model.pth"
-set "OUTPUT_DIR=C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\s2_test"
+set "MODEL_PATH=C:\_code\python\wetlands_ml_codex\data00_small_model_train_test\models\best_model.pth"
+set "OUTPUT_DIR=data\00_small_model_train_test\s2_test_topo"
 set "MASK_PATH="
 set "VECTOR_PATH="
 set "WINDOW_SIZE=512"
@@ -30,15 +30,15 @@ set "ARCHITECTURE=unet"
 set "ENCODER_NAME=resnet34"
 set "MIN_AREA=100"
 set "SIMPLIFY=1.0"
-set "PROB_THRESHOLD=0.5"
+set "PROB_THRESHOLD="
 set "LOG_LEVEL=INFO"
 
 if "%MODEL_PATH%"=="" goto :missing_model
 if "%STACK_MANIFEST%"=="" if "%TEST_RASTER%"=="" goto :missing_inputs
 
-if not exist "venv\Scripts\activate.bat" goto :missing_venv
+if not exist "venv312\Scripts\activate.bat" goto :missing_venv
 
-call "venv\Scripts\activate.bat"
+call "venv312\Scripts\activate.bat"
 if errorlevel 1 goto :fail
 
 set "STACK_ARG="

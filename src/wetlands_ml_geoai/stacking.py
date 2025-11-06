@@ -256,6 +256,24 @@ class RasterStack:
         row, col = rowcol(self.transform, x_ul, y_ul)
         return Window(col, row, width, height)
 
+def normalize_stack_array(
+    data: np.ndarray,
+    nodata_value: Optional[float] = FLOAT_NODATA,
+) -> np.ndarray:
+    """Return a copy of ``data`` with nodata cleaned, NaNs filled, and values clipped to [0, 1]."""
+
+    cleaned = data.astype(np.float32, copy=True)
+    if nodata_value is not None:
+        nodata_mask = cleaned == float(nodata_value)
+        if nodata_mask.any():
+            cleaned[nodata_mask] = 0.0
+
+    # Replace NaNs and infinities with finite bounds prior to clipping.
+    np.nan_to_num(cleaned, copy=False, nan=0.0, posinf=1.0, neginf=0.0)
+    np.clip(cleaned, 0.0, 1.0, out=cleaned)
+    return cleaned
+
+
 def rewrite_tile_images(manifest: Union[str, Path, StackManifest], images_dir: Path) -> int:
     """Rewrite GeoTIFF tiles in-place using the manifest-defined stack."""
     manifest_obj = load_manifest(manifest) if not isinstance(manifest, StackManifest) else manifest
@@ -269,14 +287,7 @@ def rewrite_tile_images(manifest: Union[str, Path, StackManifest], images_dir: P
             with rasterio.open(tile_path) as tile_src:
                 window = stack.window_from_transform(tile_src.transform, tile_src.width, tile_src.height)
                 data = stack.read_window(window)
-                # Clean nodata and clamp to [0,1]
-                mask_nd = (data == FLOAT_NODATA)
-                if mask_nd.any():
-                    data = data.copy()
-                    data[mask_nd] = 0.0
-                import numpy as _np
-                data = _np.nan_to_num(data, nan=0.0, posinf=1.0, neginf=0.0)
-                _np.clip(data, 0.0, 1.0, out=data)
+                data = normalize_stack_array(data, FLOAT_NODATA)
                 tile_transform = tile_src.transform
                 tile_height = tile_src.height
                 tile_width = tile_src.width
@@ -296,6 +307,7 @@ __all__ = [
     "StackManifest",
     "load_manifest",
     "RasterStack",
+    "normalize_stack_array",
     "rewrite_tile_images",
 ]
 

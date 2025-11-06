@@ -3,9 +3,9 @@ from geoai.download import download_naip
 
 
 # user inputs
-output_dir = r"C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\s2_test\naip"
-aoi_gpkg = r"C:\Users\anichols\OneDrive - Atwell LLC\Desktop\_Atwell_AI\Projects\Wetlands_ML\Prelim_Test_MI\data\mi_model_large\test_aoi.gpkg"
-max_items = 8
+output_dir = r"data\naip_dte"
+aoi_gpkg = r"data\del.gpkg"
+max_items = 2
 year = 2022
 
 # get aoi polygons in WGS84

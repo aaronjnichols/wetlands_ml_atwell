@@ -38,14 +38,14 @@ This document summarizes the major data and control flows in the current codebas
   - NAIP reference preparation, including mosaicking, resampling, and manifest scaffolding. Multiple disjoint AOI polygons are processed independently, with Sentinel-2 composites and NAIP/topography rasters clipped per AOI.
   - STAC queries for Sentinel-2 imagery, filtering by season, cloud masking via SCL, generating composites with Stackstac & Dask.
   - Progress reporting utilities (custom progress bar classes).
-  - Optional downloads for NAIP, wetlands, and LiDAR topography that feed into the training stack.
+  - Optional downloads for NAIP, wetlands, and LiDAR topography that feed into the training stack. Topography processing can also reuse pre-downloaded DEM tiles supplied via `--topography-dem-dir`.
 - Manifest writing (`write_stack_manifest`) now supports per-AOI outputs and produces a directory of manifests plus an index file (`manifest_index.json`), allowing UNet training to ingest multi-AOI stacks without manual concatenation.
 
 ## LiDAR Topography Processing
 
 - Entrypoint: `topography/cli.py` (Python module and `scripts/windows/run_topography_processing.bat`).
 - Responsibilities:
-  - Query USGS 3DEP (TNM Access) for buffered AOI coverage, download and cache 1 m DEM tiles.
+  - Query USGS 3DEP (TNM Access) for buffered AOI coverage, download and cache 1 m DEM tiles, or reuse pre-downloaded DEM GeoTIFFs when supplied through configuration.
   - Mosaic DEM to the NAIP/Sentinel grid, respecting a configurable buffer to avoid edge artifacts.
   - Compute derived bands: elevation, slope, TPI (small/large radii), and depression depth; output float32 raster with nodata propagation.
   - Register topography raster in the stack manifest so training/inference consume the additional terrain channels transparently.

@@ -640,6 +640,7 @@ def run_pipeline(
     mask_dilation: int = 0,
     auto_download_topography: bool = False,
     topography_cache_dir: Optional[Path] = None,
+    topography_dem_dir: Optional[Path] = None,
     topography_buffer_meters: float = 200.0,
     topography_tpi_small: float = 30.0,
     topography_tpi_large: float = 150.0,
@@ -775,6 +776,7 @@ def run_pipeline(
                 tpi_small_radius=topography_tpi_small,
                 tpi_large_radius=topography_tpi_large,
                 cache_dir=topography_cache_dir,
+                dem_dir=topography_dem_dir,
             )
             topography_path = prepare_topography_stack(topo_config)
             extra_sources = [
@@ -933,6 +935,11 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
         help="Optional directory for caching raw DEM downloads.",
     )
     parser.add_argument(
+        "--topography-dem-dir",
+        type=Path,
+        help="Directory of pre-downloaded DEM GeoTIFF tiles to use instead of fetching from 3DEP.",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -962,6 +969,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         mask_dilation=args.mask_dilation,
         auto_download_topography=args.auto_download_topography,
         topography_cache_dir=args.topography_cache_dir,
+        topography_dem_dir=args.topography_dem_dir,
         topography_buffer_meters=args.topography_buffer_meters,
         topography_tpi_small=args.topography_tpi_small,
         topography_tpi_large=args.topography_tpi_large,

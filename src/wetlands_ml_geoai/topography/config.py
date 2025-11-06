@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 from shapely.geometry.base import BaseGeometry
 
@@ -24,6 +24,10 @@ class TopographyStackConfig:
     cache_dir: Optional[Path] = None
     max_products: int = 500
     description: str = "USGS 3DEP derived topography"
+    dem_dir: Optional[Path] = None
+    """Optional directory containing pre-downloaded DEM tiles."""
+    dem_paths: Optional[Sequence[Path]] = None
+    """Optional explicit list of DEM GeoTIFF paths to use."""
 
 
 __all__ = ["TopographyStackConfig"]

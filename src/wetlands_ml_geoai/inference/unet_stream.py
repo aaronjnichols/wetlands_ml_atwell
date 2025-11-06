@@ -16,7 +16,13 @@ from rasterio.windows import Window
 from geoai.train import get_smp_model
 from geoai.utils import get_device
 
-from ..stacking import FLOAT_NODATA, RasterStack, StackManifest, load_manifest
+from ..stacking import (
+    FLOAT_NODATA,
+    RasterStack,
+    StackManifest,
+    load_manifest,
+    normalize_stack_array,
+)
 
 
 def _compute_offsets(size: int, window: int, overlap: int) -> List[int]:
@@ -62,8 +68,6 @@ def _prepare_window(
     nodata_value: Optional[float],
 ) -> np.ndarray:
     array = data.astype(np.float32, copy=False)
-    if nodata_value is not None:
-        array = np.where(array == nodata_value, 0.0, array)
 
     channel_count = array.shape[0]
     if channel_count > desired_channels:
@@ -73,7 +77,12 @@ def _prepare_window(
         padded[:channel_count] = array
         array = padded
 
-    return array / 255.0
+    # Normalize using the same approach as training:
+    # 1. Clean nodata, clip to [0,1]
+    # 2. Divide by 255 (matching geoai's SemanticSegmentationDataset)
+    array = normalize_stack_array(array, nodata_value)
+    array = array / 255.0
+    return array
 
 
 def _predict_probabilities(model: torch.nn.Module, tensor: torch.Tensor) -> np.ndarray:
