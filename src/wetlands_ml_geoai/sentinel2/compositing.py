@@ -790,6 +790,16 @@ def run_pipeline(
                         "TPI_large",
                         "DepressionDepth",
                     ],
+                    # Per-band scaling to normalize topography values to [0, 1]
+                    # These ranges should cover typical values for most US locations
+                    # Adjust if working in areas with extreme elevation (e.g., mountains)
+                    "band_scaling": {
+                        "Elevation": [0.0, 3000.0],      # meters (0 to ~10,000 ft)
+                        "Slope": [0.0, 90.0],           # degrees
+                        "TPI_small": [-50.0, 50.0],     # meters (centered at 0)
+                        "TPI_large": [-100.0, 100.0],   # meters (centered at 0)
+                        "DepressionDepth": [0.0, 50.0], # meters
+                    },
                     "resample": "bilinear",
                     "nodata": FLOAT_NODATA,
                     "description": topo_config.description,
