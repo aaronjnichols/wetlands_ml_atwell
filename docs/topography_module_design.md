@@ -22,8 +22,8 @@
 
 1. Parse CLI args → build `TopographyStackConfig` with AOI geometry, target grid (from NAIP or existing manifest), buffer size.
 2. Query TNM Access with buffered AOI; cache raw DEM GeoTIFFs under `data/topography/raw/`. When `dem_dir`/`dem_paths` are provided, reuse those GeoTIFFs and skip the download step.
-3. Mosaic and reproject DEM into target grid + buffer using rasterio.merge; maintain nodata mask and retain the resampled elevation surface.
-4. Run derivatives on buffered DEM; drop buffer and write `float32` GeoTIFF at stack resolution with band labels `['Elevation', 'Slope', 'TPI_small', 'TPI_large', 'DepressionDepth']`.
+3. Mosaic and reproject DEM into target grid + buffer using rasterio.merge; maintain nodata mask.
+4. Run derivatives on buffered DEM; drop buffer and write `float32` GeoTIFF at stack resolution with band labels `['Slope', 'TPI_small', 'TPI_large', 'DepressionDepth']`. Note: Raw elevation is intentionally excluded because wetlands exist at all elevations and absolute elevation creates geographic bias that hurts model generalization. The relative features (TPI, slope, depression depth) capture what matters for wetland detection.
 5. Return metadata object referencing the derivative raster for manifest integration.
 
 ## Batch Script Integration

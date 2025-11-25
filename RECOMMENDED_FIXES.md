@@ -58,27 +58,26 @@ elif source.scale_max:
             data[mask] = data[mask] / float(source.scale_max)
 ```
 
-**Step 3: Update `compositing.py` to include topography scaling**
+**Step 3: Update `compositing.py` to include topography scaling** ✅ IMPLEMENTED
 
 ```python
 # In compositing.py, update the extra_sources creation:
+# NOTE: Raw elevation is excluded - only relative features that generalize across regions
 
 extra_sources = [{
     "type": "topography",
     "path": str(topography_path.resolve()),
     "band_labels": [
-        "Elevation",
         "Slope",
         "TPI_small",
         "TPI_large",
         "DepressionDepth",
     ],
     "band_scaling": {
-        "Elevation": [0.0, 3000.0],      # Adjust max based on your area
-        "Slope": [0.0, 90.0],
-        "TPI_small": [-50.0, 50.0],      # Centered around 0
-        "TPI_large": [-100.0, 100.0],
-        "DepressionDepth": [0.0, 50.0],
+        "Slope": [0.0, 90.0],            # degrees (0=flat, 90=vertical)
+        "TPI_small": [-50.0, 50.0],      # meters (negative=depression)
+        "TPI_large": [-100.0, 100.0],    # meters (negative=depression)
+        "DepressionDepth": [0.0, 50.0],  # meters (depth of local sinks)
     },
     "resample": "bilinear",
     "nodata": FLOAT_NODATA,
@@ -288,22 +287,24 @@ Each file would be ~100-200 lines with a single responsibility.
 
 For immediate relief without major refactoring:
 
-- [ ] Add `band_scaling` to topography manifest entry (manual edit for now)
-- [ ] Update the failing test
-- [ ] Add warning logs for clipped values
-- [ ] Document the expected input ranges for each source
+- [x] Add `band_scaling` to topography manifest entry ✅ IMPLEMENTED
+- [x] Update the failing test ✅ IMPLEMENTED
+- [x] Add warning logs for clipped values ✅ IMPLEMENTED
+- [x] Document the expected input ranges for each source ✅ IMPLEMENTED
+- [x] Remove raw elevation (doesn't help, hurts generalization) ✅ IMPLEMENTED
 
 ### Manual Manifest Fix
 
-If you have an existing manifest, manually add scaling:
+If you have an **existing manifest** created before these fixes, update it to:
+1. Remove "Elevation" from band_labels
+2. Add band_scaling for the remaining 4 bands
 
 ```json
 {
   "type": "topography",
   "path": "/path/to/topography.tif",
-  "band_labels": ["Elevation", "Slope", "TPI_small", "TPI_large", "DepressionDepth"],
+  "band_labels": ["Slope", "TPI_small", "TPI_large", "DepressionDepth"],
   "band_scaling": {
-    "Elevation": [0, 3000],
     "Slope": [0, 90],
     "TPI_small": [-50, 50],
     "TPI_large": [-100, 100],
@@ -314,7 +315,7 @@ If you have an existing manifest, manually add scaling:
 }
 ```
 
-Then update the code to read `band_scaling` (see Priority 1 implementation).
+**Note:** You will also need to regenerate your topography raster to have only 4 bands.
 
 ---
 
