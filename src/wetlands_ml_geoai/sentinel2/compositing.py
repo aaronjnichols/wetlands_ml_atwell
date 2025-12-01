@@ -783,13 +783,22 @@ def run_pipeline(
                 {
                     "type": "topography",
                     "path": str(topography_path.resolve()),
+                    # Only relative topographic features - no raw elevation
+                    # Raw elevation is excluded because wetlands exist at all elevations
+                    # and absolute elevation creates geographic bias that hurts generalization
                     "band_labels": [
-                        "Elevation",
                         "Slope",
                         "TPI_small",
                         "TPI_large",
                         "DepressionDepth",
                     ],
+                    # Per-band scaling to normalize topography values to [0, 1]
+                    "band_scaling": {
+                        "Slope": [0.0, 90.0],           # degrees (0=flat, 90=vertical)
+                        "TPI_small": [-50.0, 50.0],     # meters (negative=depression)
+                        "TPI_large": [-100.0, 100.0],   # meters (negative=depression)
+                        "DepressionDepth": [0.0, 50.0], # meters (depth of local sinks)
+                    },
                     "resample": "bilinear",
                     "nodata": FLOAT_NODATA,
                     "description": topo_config.description,

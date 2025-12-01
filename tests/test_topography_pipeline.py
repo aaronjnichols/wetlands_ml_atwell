@@ -14,7 +14,14 @@ from wetlands_ml_geoai.topography.pipeline import prepare_topography_stack
 from wetlands_ml_geoai.topography.processing import _compute_tpi, write_topography_raster
 
 
-def test_write_topography_raster_writes_five_bands(tmp_path: Path) -> None:
+def test_write_topography_raster_writes_four_bands(tmp_path: Path) -> None:
+    """Test that topography raster contains only relative features (no raw elevation).
+
+    Raw elevation is excluded because:
+    - Wetlands exist at all elevations (coastal to alpine)
+    - Absolute elevation creates geographic bias
+    - Relative features (TPI, depression depth) capture what matters
+    """
     dem_path = tmp_path / "dem.tif"
     transform = rasterio.transform.from_origin(0, 10, 1, 1)
     profile = {
@@ -42,9 +49,9 @@ def test_write_topography_raster_writes_five_bands(tmp_path: Path) -> None:
 
     assert result.exists()
     with rasterio.open(result) as src:
-        assert src.count == 5
+        assert src.count == 4  # Only relative features, no raw elevation
         names = list(src.descriptions)
-        assert names == ["Elevation", "Slope", "TPI_small", "TPI_large", "DepressionDepth"]
+        assert names == ["Slope", "TPI_small", "TPI_large", "DepressionDepth"]
 
 
 def _legacy_tpi(dem: np.ndarray, radius: float, pixel_size: float) -> np.ndarray:

@@ -47,6 +47,6 @@ This document summarizes the major data and control flows in the current codebas
 - Responsibilities:
   - Query USGS 3DEP (TNM Access) for buffered AOI coverage, download and cache 1 m DEM tiles, or reuse pre-downloaded DEM GeoTIFFs when supplied through configuration.
   - Mosaic DEM to the NAIP/Sentinel grid, respecting a configurable buffer to avoid edge artifacts.
-  - Compute derived bands: elevation, slope, TPI (small/large radii), and depression depth; output float32 raster with nodata propagation.
+  - Compute derived bands: slope, TPI (small/large radii), and depression depth; output float32 raster with nodata propagation. Note: Raw elevation is intentionally excluded as it creates geographic bias and doesn't improve wetland detection (wetlands exist at all elevations).
   - Register topography raster in the stack manifest so training/inference consume the additional terrain channels transparently.
   - Sentinel-2 seasonal pipeline can auto-generate these rasters when the corresponding flags are provided; the standalone CLI remains available for manual runs.

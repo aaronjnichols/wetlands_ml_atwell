@@ -28,6 +28,14 @@ def test_unet_probability_threshold_parses():
 
 
 def test_prepare_window_matches_training_normalization():
+    """Verify _prepare_window produces same output as training normalization.
+
+    The training pipeline does:
+    1. normalize_stack_array() - clips to [0, 1]
+    2. /255.0 - matches geoai's SemanticSegmentationDataset
+
+    Inference must apply the same steps.
+    """
     raw = np.array(
         [
             [[0.2, 0.5], [np.nan, FLOAT_NODATA]],
@@ -39,7 +47,9 @@ def test_prepare_window_matches_training_normalization():
 
     expected = np.zeros((4, raw.shape[1], raw.shape[2]), dtype=np.float32)
     expected[: raw.shape[0]] = raw
-    expected = normalize_stack_array(expected, FLOAT_NODATA)
+    # Match the full training normalization: normalize_stack_array + /255
+    expected = normalize_stack_array(expected, FLOAT_NODATA, warn_on_clip=False)
+    expected = expected / 255.0  # This step matches geoai's training normalization
 
     actual = _prepare_window(raw, desired_channels=4, nodata_value=FLOAT_NODATA)
 

@@ -34,6 +34,8 @@ class StackSource:
     path: Path
     band_labels: Sequence[str]
     scale_max: Optional[float] = None
+    scale_min: Optional[float] = None
+    band_scaling: Optional[Dict[str, Sequence[float]]] = None  # Per-band [min, max] scaling
     nodata: Optional[float] = None
     resample: str = "bilinear"
     dtype: Optional[str] = None
@@ -79,12 +81,20 @@ def load_manifest(path: Union[str, Path]) -> StackManifest:
 
     sources: List[StackSource] = []
     for source_data in data.get("sources", []):
+        # Parse band_scaling if present (convert lists to tuples for hashability)
+        raw_band_scaling = source_data.get("band_scaling")
+        band_scaling = None
+        if raw_band_scaling and isinstance(raw_band_scaling, dict):
+            band_scaling = {k: tuple(v) for k, v in raw_band_scaling.items()}
+
         sources.append(
             StackSource(
                 type=source_data["type"],
                 path=Path(source_data["path"]).expanduser().resolve(),
                 band_labels=tuple(source_data.get("band_labels", [])),
                 scale_max=source_data.get("scale_max"),
+                scale_min=source_data.get("scale_min"),
+                band_scaling=band_scaling,
                 nodata=source_data.get("nodata"),
                 resample=source_data.get("resample", "bilinear"),
                 dtype=source_data.get("dtype"),
@@ -234,11 +244,32 @@ class RasterStack:
                         data = data.copy()
                         data[nodata_mask] = FLOAT_NODATA
 
-                if source.scale_max:
+                # Apply scaling to normalize values to [0, 1] range
+                if source.band_scaling:
+                    # Per-band min-max scaling (e.g., for topography with different ranges)
+                    data = data.copy()
+                    for band_idx, label in enumerate(source.band_labels):
+                        if label in source.band_scaling:
+                            vmin, vmax = source.band_scaling[label]
+                            band_mask = data[band_idx] != FLOAT_NODATA
+                            if band_mask.any():
+                                # Normalize: (value - min) / (max - min)
+                                scale_range = float(vmax) - float(vmin)
+                                if scale_range > 0:
+                                    data[band_idx][band_mask] = (
+                                        data[band_idx][band_mask] - float(vmin)
+                                    ) / scale_range
+                elif source.scale_max is not None:
+                    # Single scale_max for all bands (e.g., NAIP with 0-255)
                     mask = data != FLOAT_NODATA
                     if mask.any():
                         data = data.copy()
-                        data[mask] = data[mask] / float(source.scale_max)
+                        if source.scale_min is not None:
+                            scale_range = float(source.scale_max) - float(source.scale_min)
+                            if scale_range > 0:
+                                data[mask] = (data[mask] - float(source.scale_min)) / scale_range
+                        else:
+                            data[mask] = data[mask] / float(source.scale_max)
 
                 row_insert = clip_row_off - row_off
                 col_insert = clip_col_off - col_off
@@ -259,8 +290,19 @@ class RasterStack:
 def normalize_stack_array(
     data: np.ndarray,
     nodata_value: Optional[float] = FLOAT_NODATA,
+    warn_on_clip: bool = True,
 ) -> np.ndarray:
-    """Return a copy of ``data`` with nodata cleaned, NaNs filled, and values clipped to [0, 1]."""
+    """Return a copy of ``data`` with nodata cleaned, NaNs filled, and values clipped to [0, 1].
+
+    Args:
+        data: Input array to normalize.
+        nodata_value: Value representing nodata pixels (will be set to 0).
+        warn_on_clip: If True, log warnings when values are clipped.
+
+    Returns:
+        Normalized array with values in [0, 1] range.
+    """
+    import logging
 
     cleaned = data.astype(np.float32, copy=True)
     if nodata_value is not None:
@@ -270,6 +312,34 @@ def normalize_stack_array(
 
     # Replace NaNs and infinities with finite bounds prior to clipping.
     np.nan_to_num(cleaned, copy=False, nan=0.0, posinf=1.0, neginf=0.0)
+
+    # Warn if values will be clipped - indicates missing scaling configuration
+    if warn_on_clip:
+        # Check valid (non-zero after nodata replacement) values
+        valid_mask = np.ones_like(cleaned, dtype=bool)
+        if nodata_value is not None:
+            valid_mask = data != float(nodata_value)
+
+        if valid_mask.any():
+            valid_values = cleaned[valid_mask]
+            max_val = float(valid_values.max())
+            min_val = float(valid_values.min())
+
+            if max_val > 1.0:
+                logging.warning(
+                    "Values above 1.0 detected (max=%.2f) - these will be clipped to 1.0. "
+                    "This likely means a data source is missing 'scale_max' or 'band_scaling' "
+                    "in its manifest configuration. Check topography or other raw-value sources.",
+                    max_val
+                )
+            if min_val < 0.0:
+                logging.warning(
+                    "Negative values detected (min=%.2f) - these will be clipped to 0.0. "
+                    "For sources with negative values (e.g., TPI), use 'band_scaling' with "
+                    "appropriate min/max range in the manifest.",
+                    min_val
+                )
+
     np.clip(cleaned, 0.0, 1.0, out=cleaned)
     return cleaned
 

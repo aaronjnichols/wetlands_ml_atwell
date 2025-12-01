@@ -129,6 +129,19 @@ def _compute_depression_depth(dem: np.ndarray) -> np.ndarray:
 
 
 def write_topography_raster(config: TopographyStackConfig, dem_paths: Iterable[Path], output_path: Path) -> Path:
+    """Write topography-derived features to a GeoTIFF.
+
+    Generates 4 bands of relative topographic features useful for wetland detection:
+    - Slope: terrain steepness in degrees (flat areas retain water)
+    - TPI_small: local terrain position at small scale (depressions = negative)
+    - TPI_large: local terrain position at large scale (broader landscape context)
+    - DepressionDepth: depth of local sinks (where water accumulates)
+
+    Note: Raw elevation is intentionally excluded because:
+    - Wetlands exist at all elevations (coastal to alpine)
+    - Absolute elevation creates geographic bias that hurts model generalization
+    - Relative features (TPI, depression depth) capture what matters for wetland detection
+    """
     dem_paths_list = list(dem_paths)
     transform, width, height, pixel_size, crs = _read_transform(config.target_grid_path)
     LOGGER.info(
@@ -138,8 +151,6 @@ def write_topography_raster(config: TopographyStackConfig, dem_paths: Iterable[P
     )
     dem = _mosaic_dem(dem_paths_list, transform, width, height, crs)
     dem_mask = np.isnan(dem)
-    elevation = dem.astype("float32", copy=True)
-    elevation[dem_mask] = FLOAT_NODATA
 
     LOGGER.info("Computing slope raster")
     slope = _compute_slope(dem, pixel_size)
@@ -161,7 +172,7 @@ def write_topography_raster(config: TopographyStackConfig, dem_paths: Iterable[P
         "driver": "GTiff",
         "height": height,
         "width": width,
-        "count": 5,
+        "count": 4,  # Slope, TPI_small, TPI_large, DepressionDepth (no raw elevation)
         "dtype": "float32",
         "transform": transform,
         "crs": crs,
@@ -171,17 +182,17 @@ def write_topography_raster(config: TopographyStackConfig, dem_paths: Iterable[P
         "BIGTIFF": "IF_SAFER",
     }
 
-    bands = np.stack([elevation, slope, tpi_small, tpi_large, depression])
+    # Stack only relative topographic features (no raw elevation)
+    bands = np.stack([slope, tpi_small, tpi_large, depression])
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     LOGGER.info("Writing derivatives -> %s", output_path)
     with rasterio.open(output_path, "w", **profile) as dst:
         dst.write(bands)
-        dst.set_band_description(1, "Elevation")
-        dst.set_band_description(2, "Slope")
-        dst.set_band_description(3, "TPI_small")
-        dst.set_band_description(4, "TPI_large")
-        dst.set_band_description(5, "DepressionDepth")
+        dst.set_band_description(1, "Slope")
+        dst.set_band_description(2, "TPI_small")
+        dst.set_band_description(3, "TPI_large")
+        dst.set_band_description(4, "DepressionDepth")
 
     LOGGER.info("Wrote topography raster -> %s", output_path)
     return output_path
