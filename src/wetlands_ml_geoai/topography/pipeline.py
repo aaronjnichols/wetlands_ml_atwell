@@ -39,13 +39,23 @@ def _resolve_local_dem_paths(config: TopographyStackConfig) -> List[Path]:
 
     if config.dem_dir:
         directory = Path(config.dem_dir).expanduser().resolve()
+        LOGGER.info(f"Searching for DEMs in: {directory}")
         if not directory.exists():
             raise FileNotFoundError(f"Configured DEM directory not found: {directory}")
         if not directory.is_dir():
             raise NotADirectoryError(f"Configured DEM directory is not a directory: {directory}")
+        
+        found_any = False
         for path in sorted(directory.glob("*")):
+            LOGGER.debug(f"Checking file: {path}")
             if path.is_file() and path.suffix.lower() in {".tif", ".tiff"}:
                 candidates.append(path.resolve())
+                found_any = True
+        
+        if not found_any:
+            LOGGER.warning(f"No .tif/.tiff files found in {directory}")
+            # Debug listing
+            LOGGER.warning(f"Directory contents: {[p.name for p in directory.glob('*')]}")
 
     unique: List[Path] = []
     seen: Set[Path] = set()

@@ -7,11 +7,11 @@ cd /d "%~dp0..\.."
 REM ------------------------------------------------------------------
 REM Edit the values below to match your project before running.
 REM ------------------------------------------------------------------
-set "AOI_PATH=data\00_small_model_train_test\s2_test_topo\test_aoi.gpkg"
+set "AOI_PATH=data\20251201_MI_NWI_Small_Test\test\aoi_test.gpkg"
 set "YEARS=2021 2022 2023"
-set "OUTPUT_DIR=data\00_small_model_train_test\s2_test_topo"
+set "OUTPUT_DIR=data\20251201_MI_NWI_Small_Test\test\s2"
 set "SEASONS=SPR SUM FAL"
-set "NAIP_PATH=data\00_small_model_train_test\s2_test_topo\m_4308404_nw_16_060_20220810.tif"
+set "NAIP_PATH=data\20251201_MI_NWI_Small_Test\test\rasters\m_4308404_nw_16_060_20220810.tif"
 set "CLOUD_COVER=60"
 set "MIN_CLEAR_OBS=3"
 set "MASK_DILATION=0"
@@ -33,7 +33,7 @@ set "TOPOGRAPHY_BUFFER_METERS="
 set "TOPOGRAPHY_TPI_SMALL="
 set "TOPOGRAPHY_TPI_LARGE="
 set "TOPOGRAPHY_CACHE_DIR="
-set "TOPOGRAPHY_DEM_DIR=data\00_small_model_train_test\s2_test_topo\dem"
+set "TOPOGRAPHY_DEM_DIR=data\20251201_MI_NWI_Small_Test\test\rasters\dem"
 
 if not exist "venv312\Scripts\activate.bat" (
     echo [ERROR] Python virtual environment not found. Run setup.bat first.
