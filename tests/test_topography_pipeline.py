@@ -96,11 +96,7 @@ def test_prepare_topography_stack_uses_local_dems(tmp_path: Path, monkeypatch: p
         raise AssertionError("Remote DEM fetching should be skipped when dem_paths are provided")
 
     monkeypatch.setattr(
-        "wetlands_ml_geoai.topography.pipeline.fetch_dem_inventory",
-        _should_not_run,
-    )
-    monkeypatch.setattr(
-        "wetlands_ml_geoai.topography.pipeline.download_dem_products",
+        "wetlands_ml_geoai.services.download.TopographyService.download",
         _should_not_run,
     )
 

@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
+import geoai
 import numpy as np
 import rasterio
 import torch
@@ -23,6 +24,8 @@ from ..stacking import (
     load_manifest,
     normalize_stack_array,
 )
+from ..config import InferenceConfig
+from .common import resolve_output_paths
 
 
 def _compute_offsets(size: int, window: int, overlap: int) -> List[int]:
@@ -66,7 +69,37 @@ def _prepare_window(
     data: np.ndarray,
     desired_channels: int,
     nodata_value: Optional[float],
+    legacy_normalization: bool = True,
 ) -> np.ndarray:
+    """Prepare a data window for model inference.
+    
+    This function normalizes input data to match what the model learned during training.
+    
+    Normalization Background
+    ------------------------
+    geoai's training always applies /255 to tile data, assuming uint8 [0-255] input.
+    
+    With OLD float32 [0-1] tiles:
+        - geoai /255 → model trained on [0-0.004] range
+        - Inference must apply /255 to match (legacy_normalization=True)
+    
+    With NEW uint8 [0-255] tiles:
+        - geoai /255 → model trained on [0-1] range (correct!)
+        - Inference should NOT apply /255 (legacy_normalization=False)
+        
+    See normalization.py for the full data flow documentation.
+    
+    Args:
+        data: Input array from RasterStack (float32, scaled to [0-1]).
+        desired_channels: Number of channels expected by the model.
+        nodata_value: Value representing nodata pixels.
+        legacy_normalization: If True, apply /255 for models trained on 
+            old float32 tiles. If False, skip /255 for models trained on
+            new uint8 tiles.
+            
+    Returns:
+        float32 array normalized for model input.
+    """
     array = data.astype(np.float32, copy=False)
 
     channel_count = array.shape[0]
@@ -77,11 +110,18 @@ def _prepare_window(
         padded[:channel_count] = array
         array = padded
 
-    # Normalize using the same approach as training:
-    # 1. Clean nodata, clip to [0,1]
-    # 2. Divide by 255 (matching geoai's SemanticSegmentationDataset)
+    # Clean nodata and clip to [0, 1]
     array = normalize_stack_array(array, nodata_value)
-    array = array / 255.0
+    
+    if legacy_normalization:
+        # BACKWARD COMPATIBILITY with models trained on float32 [0-1] tiles:
+        # geoai applied /255 to those tiles during training, so models learned
+        # on [0-0.004] range. We must apply /255 here to match.
+        #
+        # For models trained on NEW uint8 [0-255] tiles, set legacy_normalization=False
+        # since those models expect [0-1] input (geoai's /255 on uint8 gives [0-1]).
+        array = array / 255.0
+        
     return array
 
 
@@ -157,6 +197,7 @@ def _stream_inference(
     device: torch.device,
     output_path: Path,
     context_label: str,
+    legacy_normalization: bool = True,
 ) -> float:
     window_h = min(window_size, height)
     window_w = min(window_size, width)
@@ -184,7 +225,7 @@ def _stream_inference(
             for col_off in col_offsets:
                 win = Window(col_off, row_off, window_w, window_h)
                 data = read_window(win)
-                prepared = _prepare_window(data, channel_count, nodata_value)
+                prepared = _prepare_window(data, channel_count, nodata_value, legacy_normalization)
                 tensor = torch.from_numpy(prepared).to(device).unsqueeze(0)
 
                 probabilities = _predict_probabilities(model, tensor)
@@ -219,7 +260,25 @@ def infer_manifest(
     encoder_name: str,
     num_classes: int,
     probability_threshold: Optional[float],
+    legacy_normalization: bool = True,
 ) -> None:
+    """Run sliding-window inference on a manifest-defined raster stack.
+    
+    Args:
+        manifest: Stack manifest defining the input data sources.
+        model_path: Path to trained model checkpoint.
+        output_path: Path to write prediction GeoTIFF.
+        window_size: Size of sliding window in pixels.
+        overlap: Overlap between windows in pixels.
+        num_channels: Number of input channels (None to auto-detect).
+        architecture: Model architecture (e.g., 'unet').
+        encoder_name: Encoder backbone (e.g., 'resnet34').
+        num_classes: Number of output classes.
+        probability_threshold: Threshold for binary prediction (None for argmax).
+        legacy_normalization: If True (default), apply /255 normalization for
+            models trained on old float32 [0-1] tiles. Set to False for models
+            trained on new uint8 [0-255] tiles. See normalization.py for details.
+    """
     manifest_obj = manifest if isinstance(manifest, StackManifest) else load_manifest(manifest)
     device = get_device()
 
@@ -254,6 +313,7 @@ def infer_manifest(
             device=device,
             output_path=output_path,
             context_label="Streaming UNet",
+            legacy_normalization=legacy_normalization,
         )
 
     logging.info("Streaming semantic inference finished in %.2f seconds", elapsed)
@@ -309,5 +369,108 @@ def infer_raster(
     logging.info("Raster semantic inference finished in %.2f seconds", elapsed)
 
 
-__all__ = ["infer_manifest", "infer_raster"]
+def infer_from_config(config: InferenceConfig) -> Tuple[Path, Path]:
+    """Run inference workflow from an InferenceConfig object.
+    
+    This function handles manifest/raster detection, output path resolution,
+    inference execution, and vectorization.
+    
+    Args:
+        config: Validated InferenceConfig instance.
+        
+    Returns:
+        Tuple of (masks_path, vectors_path) where predictions were written.
+        
+    Raises:
+        FileNotFoundError: If model or input files are not found.
+        ValueError: If configuration is invalid.
+    """
+    # Validate config inputs up front to surface clear errors.
+    config.validate()
 
+    # Validate model path
+    if not config.model_path.exists():
+        raise FileNotFoundError(f"Model checkpoint not found: {config.model_path}")
+    
+    # Determine source path and load manifest if applicable
+    stack_manifest: Optional[StackManifest] = None
+    
+    if config.stack_manifest is not None:
+        if not config.stack_manifest.exists():
+            raise FileNotFoundError(f"Stack manifest not found: {config.stack_manifest}")
+        stack_manifest = load_manifest(config.stack_manifest)
+        source_path = config.stack_manifest
+        logging.info("Using stack manifest at %s for streaming inference", config.stack_manifest)
+    else:
+        if config.test_raster is None:
+            raise ValueError("Either test_raster or stack_manifest must be provided")
+        if not config.test_raster.exists():
+            raise FileNotFoundError(f"Test raster not found: {config.test_raster}")
+        source_path = config.test_raster
+    
+    # Resolve output paths
+    _, masks_path, vectors_path = resolve_output_paths(
+        source_path=source_path,
+        output_dir=config.output_dir,
+        mask_path=config.masks_path,
+        vector_path=config.vectors_path,
+        raster_suffix="unet_predictions",
+    )
+    
+    # Run inference
+    if stack_manifest is not None:
+        infer_manifest(
+            manifest=stack_manifest,
+            model_path=config.model_path,
+            output_path=masks_path,
+            window_size=config.window_size,
+            overlap=config.overlap,
+            num_channels=config.model.num_channels,
+            architecture=config.model.architecture,
+            encoder_name=config.model.encoder_name,
+            num_classes=config.model.num_classes,
+            probability_threshold=config.probability_threshold,
+            # Training tiles are now uint8 [0-255], which geoai divides by 255
+            # to get [0-1]. RasterStack.read_window() also returns [0-1] data.
+            # So we do NOT divide by 255 again (legacy_normalization=False).
+            legacy_normalization=False,
+        )
+    else:
+        # Direct raster inference using geoai
+        assert config.test_raster is not None  # for type-checkers
+        
+        # Determine channel count
+        num_channels = config.model.num_channels
+        if num_channels is None:
+            with rasterio.open(config.test_raster) as src:
+                num_channels = src.count
+        
+        logging.info("Running semantic inference with %s input channels", num_channels)
+        geoai.semantic_segmentation(
+            str(config.test_raster),
+            str(masks_path),
+            str(config.model_path),
+            architecture=config.model.architecture,
+            encoder_name=config.model.encoder_name,
+            num_channels=num_channels,
+            num_classes=config.model.num_classes,
+            window_size=config.window_size,
+            overlap=config.overlap,
+            batch_size=config.batch_size,
+            probability_threshold=config.probability_threshold,
+        )
+
+    logging.info("Raster predictions written to %s", masks_path)
+
+    geoai.raster_to_vector(
+        str(masks_path),
+        str(vectors_path),
+        min_area=config.min_area,
+        simplify_tolerance=config.simplify_tolerance,
+    )
+
+    logging.info("Vector predictions written to %s", vectors_path)
+    return masks_path, vectors_path
+
+
+__all__ = ["infer_manifest", "infer_raster", "infer_from_config"]

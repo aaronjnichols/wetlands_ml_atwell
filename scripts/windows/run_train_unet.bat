@@ -5,27 +5,36 @@ REM Change to project root directory (2 levels up from scripts\windows)
 cd /d "%~dp0..\.."
 
 REM ------------------------------------------------------------------
-REM Edit the values below to match your training setup before running.
+REM Training Configuration
 REM ------------------------------------------------------------------
-set "STACK_MANIFEST=data\00_small_model_train_test\s2_train_topo"
+set "STACK_MANIFEST=data\20251201_MI_NWI_Small_Test\train\s2_refactor_test\aoi_01\stack_manifest.json"
 set "TRAIN_RASTER="
 set "LABELS=data\mi_nwi_wetlands.gpkg"
-set "TILES_DIR=data\00_small_model_train_test\tiles"
-set "MODELS_DIR=data\00_small_model_train_test\models"
+set "TILES_DIR=data\20251201_MI_NWI_Small_Test\train\tiles_refactor_test"
+set "MODELS_DIR=data\20251201_MI_NWI_Small_Test\train\models_refactor_test"
+
+REM Tiling
 set "TILE_SIZE=512"
 set "STRIDE=256"
 set "BUFFER=0"
-set "BATCH_SIZE=4"
-set "EPOCHS=1"
-set "LEARNING_RATE=0.0001"
-set "WEIGHT_DECAY=0.0001"
-set "VAL_SPLIT=0.2"
-set "NUM_CHANNELS="
+
+REM Model
 set "ARCHITECTURE=unet"
 set "ENCODER_NAME=resnet34"
 set "ENCODER_WEIGHTS=imagenet"
 set "USE_ENCODER_WEIGHTS=true"
+set "NUM_CHANNELS="
+set "NUM_CLASSES="
+
+REM Hyperparameters
+set "BATCH_SIZE=16"
+set "EPOCHS=3"
+set "LEARNING_RATE=0.0001"
+set "WEIGHT_DECAY=0.0001"
+set "VAL_SPLIT=0.2"
 set "SEED=42"
+
+REM Runtime
 set "TARGET_SIZE="
 set "RESIZE_MODE=resize"
 set "NUM_WORKERS="
@@ -35,6 +44,10 @@ set "CHECKPOINT_PATH="
 set "RESUME_TRAINING=false"
 set "LOG_LEVEL=INFO"
 
+REM ------------------------------------------------------------------
+REM Validation
+REM ------------------------------------------------------------------
+
 if "%LABELS%"=="" (
     echo [ERROR] LABELS must point to your wetlands training data.
     pause
@@ -42,7 +55,7 @@ if "%LABELS%"=="" (
 )
 
 if "%STACK_MANIFEST%"=="" if "%TRAIN_RASTER%"=="" (
-    echo [ERROR] Provide STACK_MANIFEST or TRAIN_RASTER before running.
+    echo [ERROR] Provide STACK_MANIFEST or TRAIN_RASTER.
     pause
     exit /b 1
 )
@@ -54,84 +67,43 @@ if not exist "venv312\Scripts\activate.bat" (
 )
 
 call "venv312\Scripts\activate.bat"
-if errorlevel 1 (
-    echo [ERROR] Failed to activate virtual environment.
-    pause
-    exit /b 1
-)
 
-set "STACK_ARG="
-if not "%STACK_MANIFEST%"=="" set "STACK_ARG=--stack-manifest ""%STACK_MANIFEST%"""
+REM ------------------------------------------------------------------
+REM Argument Construction
+REM ------------------------------------------------------------------
 
-set "RASTER_ARG="
-if not "%TRAIN_RASTER%"=="" set "RASTER_ARG=--train-raster ""%TRAIN_RASTER%"""
+set "ARGS=--labels "%LABELS%" --tiles-dir "%TILES_DIR%" --models-dir "%MODELS_DIR%""
+set "ARGS=%ARGS% --tile-size %TILE_SIZE% --stride %STRIDE% --buffer %BUFFER%"
+set "ARGS=%ARGS% --batch-size %BATCH_SIZE% --epochs %EPOCHS% --learning-rate %LEARNING_RATE%"
+set "ARGS=%ARGS% --weight-decay %WEIGHT_DECAY% --val-split %VAL_SPLIT% --seed %SEED%"
+set "ARGS=%ARGS% --architecture %ARCHITECTURE% --encoder-name %ENCODER_NAME% --resize-mode %RESIZE_MODE%"
+set "ARGS=%ARGS% --log-level %LOG_LEVEL%"
 
-set "NUM_CHANNELS_ARG="
-if not "%NUM_CHANNELS%"=="" set "NUM_CHANNELS_ARG=--num-channels %NUM_CHANNELS%"
+if not "%STACK_MANIFEST%"=="" set "ARGS=%ARGS% --stack-manifest "%STACK_MANIFEST%""
+if not "%TRAIN_RASTER%"=="" set "ARGS=%ARGS% --train-raster "%TRAIN_RASTER%""
 
-set "TARGET_SIZE_ARG="
-if not "%TARGET_SIZE%"=="" set "TARGET_SIZE_ARG=--target-size ""%TARGET_SIZE%"""
-
-set "NUM_WORKERS_ARG="
-if not "%NUM_WORKERS%"=="" set "NUM_WORKERS_ARG=--num-workers %NUM_WORKERS%"
-
-set "PLOT_CURVES_FLAG="
-if /I "%PLOT_CURVES%"=="true" set "PLOT_CURVES_FLAG=--plot-curves"
-
-set "SAVE_CHECKPOINT_FLAG="
-if /I "%SAVE_BEST_ONLY%"=="false" (
-    set "SAVE_CHECKPOINT_FLAG=--save-all-checkpoints"
-)
-
-set "ENCODER_FLAG="
 if /I "%USE_ENCODER_WEIGHTS%"=="false" (
-    set "ENCODER_FLAG=--no-encoder-weights"
-) else if not "%ENCODER_WEIGHTS%"=="" (
-    set "ENCODER_FLAG=--encoder-weights ""%ENCODER_WEIGHTS%"""
+    set "ARGS=%ARGS% --no-encoder-weights"
+) else (
+    if not "%ENCODER_WEIGHTS%"=="" set "ARGS=%ARGS% --encoder-weights %ENCODER_WEIGHTS%"
 )
 
-set "CHECKPOINT_ARG="
-if not "%CHECKPOINT_PATH%"=="" set "CHECKPOINT_ARG=--checkpoint-path ""%CHECKPOINT_PATH%"""
+if not "%NUM_CHANNELS%"=="" set "ARGS=%ARGS% --num-channels %NUM_CHANNELS%"
+if not "%NUM_CLASSES%"=="" set "ARGS=%ARGS% --num-classes %NUM_CLASSES%"
+if not "%TARGET_SIZE%"=="" set "ARGS=%ARGS% --target-size "%TARGET_SIZE%""
+if not "%NUM_WORKERS%"=="" set "ARGS=%ARGS% --num-workers %NUM_WORKERS%"
+if not "%CHECKPOINT_PATH%"=="" set "ARGS=%ARGS% --checkpoint-path "%CHECKPOINT_PATH%""
 
-set "RESUME_FLAG="
-if /I "%RESUME_TRAINING%"=="true" set "RESUME_FLAG=--resume-training"
+if /I "%PLOT_CURVES%"=="true" set "ARGS=%ARGS% --plot-curves"
+if /I "%SAVE_BEST_ONLY%"=="false" set "ARGS=%ARGS% --save-all-checkpoints"
+if /I "%RESUME_TRAINING%"=="true" set "ARGS=%ARGS% --resume-training"
 
-set "ENCODER_ARG="
-if not "%ENCODER_NAME%"=="" set "ENCODER_ARG=--encoder-name %ENCODER_NAME%"
+REM ------------------------------------------------------------------
+REM Execution
+REM ------------------------------------------------------------------
 
-set "ARCH_ARG="
-if not "%ARCHITECTURE%"=="" set "ARCH_ARG=--architecture %ARCHITECTURE%"
-
-set "NUM_CLASSES_ARG="
-if not "%NUM_CLASSES%"=="" set "NUM_CLASSES_ARG=--num-classes %NUM_CLASSES%"
-
-python train_unet.py ^
-    %STACK_ARG% %RASTER_ARG% ^
-    --labels "%LABELS%" ^
-    --tiles-dir "%TILES_DIR%" ^
-    --models-dir "%MODELS_DIR%" ^
-    --tile-size %TILE_SIZE% ^
-    --stride %STRIDE% ^
-    --buffer %BUFFER% ^
-    --batch-size %BATCH_SIZE% ^
-    --epochs %EPOCHS% ^
-    --learning-rate %LEARNING_RATE% ^
-    --weight-decay %WEIGHT_DECAY% ^
-    --val-split %VAL_SPLIT% ^
-    %NUM_CHANNELS_ARG% ^
-    %ARCH_ARG% ^
-    %ENCODER_ARG% ^
-    %ENCODER_FLAG% ^
-    %NUM_CLASSES_ARG% ^
-    --seed %SEED% ^
-    %TARGET_SIZE_ARG% ^
-    --resize-mode %RESIZE_MODE% ^
-    %NUM_WORKERS_ARG% ^
-    %PLOT_CURVES_FLAG% ^
-    %SAVE_CHECKPOINT_FLAG% ^
-    %CHECKPOINT_ARG% ^
-    %RESUME_FLAG% ^
-    --log-level %LOG_LEVEL%
+echo Running UNet Training...
+python train_unet.py %ARGS%
 
 if errorlevel 1 (
     echo [ERROR] UNet training failed.
@@ -139,8 +111,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [INFO] UNet training complete. Models saved to %MODELS_DIR%
+echo [INFO] Training complete. Models saved to %MODELS_DIR%
 pause
 exit /b 0
-
-

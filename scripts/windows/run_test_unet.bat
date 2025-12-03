@@ -15,98 +15,86 @@ rem Change to project root directory (2 levels up from scripts\windows)
 cd /d "%~dp0..\.."
 if errorlevel 1 goto :fail
 
-set "STACK_MANIFEST=data\00_small_model_train_test\s2_test_topo\aoi_01\stack_manifest.json"
+REM ------------------------------------------------------------------
+REM Inference Configuration
+REM ------------------------------------------------------------------
+set "STACK_MANIFEST=data\20251201_MI_NWI_Small_Test\test\s2\aoi_01\stack_manifest.json"
 set "TEST_RASTER="
-set "MODEL_PATH=C:\_code\python\wetlands_ml_codex\data00_small_model_train_test\models\best_model.pth"
-set "OUTPUT_DIR=data\00_small_model_train_test\s2_test_topo"
+set "MODEL_PATH=data\20251201_MI_NWI_Small_Test\train\models\best_model.pth"
+set "OUTPUT_DIR=data\20251201_MI_NWI_Small_Test\test"
 set "MASK_PATH="
 set "VECTOR_PATH="
+
+REM Windowing
 set "WINDOW_SIZE=512"
 set "OVERLAP=256"
-set "BATCH_SIZE=4"
+set "BATCH_SIZE=16"
+
+REM Model Params
 set "NUM_CHANNELS="
 set "NUM_CLASSES=2"
 set "ARCHITECTURE=unet"
 set "ENCODER_NAME=resnet34"
+
+REM Post-Processing
 set "MIN_AREA=100"
 set "SIMPLIFY=1.0"
-set "PROB_THRESHOLD="
+set "PROB_THRESHOLD=0.5"
 set "LOG_LEVEL=INFO"
 
-if "%MODEL_PATH%"=="" goto :missing_model
-if "%STACK_MANIFEST%"=="" if "%TEST_RASTER%"=="" goto :missing_inputs
+REM ------------------------------------------------------------------
+REM Validation
+REM ------------------------------------------------------------------
 
-if not exist "venv312\Scripts\activate.bat" goto :missing_venv
+if "%MODEL_PATH%"=="" (
+    echo [ERROR] MODEL_PATH must point to a trained UNet checkpoint.
+    goto :fail
+)
+
+if "%STACK_MANIFEST%"=="" if "%TEST_RASTER%"=="" (
+    echo [ERROR] Provide STACK_MANIFEST or TEST_RASTER.
+    goto :fail
+)
+
+if not exist "venv312\Scripts\activate.bat" (
+    echo [ERROR] Python virtual environment not found. Run setup.bat first.
+    goto :fail
+)
 
 call "venv312\Scripts\activate.bat"
-if errorlevel 1 goto :fail
 
-set "STACK_ARG="
-if not "%STACK_MANIFEST%"=="" set "STACK_ARG=--stack-manifest ^"%STACK_MANIFEST%^""
+REM ------------------------------------------------------------------
+REM Argument Construction
+REM ------------------------------------------------------------------
 
-set "RASTER_ARG="
-if not "%TEST_RASTER%"=="" set "RASTER_ARG=--test-raster ^"%TEST_RASTER%^""
+set "ARGS=--model-path "%MODEL_PATH%" --output-dir "%OUTPUT_DIR%""
+set "ARGS=%ARGS% --window-size %WINDOW_SIZE% --overlap %OVERLAP% --batch-size %BATCH_SIZE%"
+set "ARGS=%ARGS% --architecture %ARCHITECTURE% --encoder-name %ENCODER_NAME%"
+set "ARGS=%ARGS% --min-area %MIN_AREA% --simplify-tolerance %SIMPLIFY% --probability-threshold %PROB_THRESHOLD%"
+set "ARGS=%ARGS% --log-level %LOG_LEVEL%"
 
-set "MASK_ARG="
-if not "%MASK_PATH%"=="" set "MASK_ARG=--masks ^"%MASK_PATH%^""
+if not "%STACK_MANIFEST%"=="" set "ARGS=%ARGS% --stack-manifest "%STACK_MANIFEST%""
+if not "%TEST_RASTER%"=="" set "ARGS=%ARGS% --test-raster "%TEST_RASTER%""
+if not "%MASK_PATH%"=="" set "ARGS=%ARGS% --masks "%MASK_PATH%""
+if not "%VECTOR_PATH%"=="" set "ARGS=%ARGS% --vectors "%VECTOR_PATH%""
 
-set "VECTOR_ARG="
-if not "%VECTOR_PATH%"=="" set "VECTOR_ARG=--vectors ^"%VECTOR_PATH%^""
+if not "%NUM_CHANNELS%"=="" set "ARGS=%ARGS% --num-channels %NUM_CHANNELS%"
+if not "%NUM_CLASSES%"=="" set "ARGS=%ARGS% --num-classes %NUM_CLASSES%"
 
-set "NUM_CHANNELS_ARG="
-if not "%NUM_CHANNELS%"=="" set "NUM_CHANNELS_ARG=--num-channels %NUM_CHANNELS%"
+REM ------------------------------------------------------------------
+REM Execution
+REM ------------------------------------------------------------------
 
-set "NUM_CLASSES_ARG="
-if not "%NUM_CLASSES%"=="" set "NUM_CLASSES_ARG=--num-classes %NUM_CLASSES%"
+echo Running UNet Inference...
+python test_unet.py %ARGS%
 
-set "ARCH_ARG="
-if not "%ARCHITECTURE%"=="" set "ARCH_ARG=--architecture %ARCHITECTURE%"
+if errorlevel 1 (
+    echo [ERROR] Inference failed.
+    goto :fail
+)
 
-set "ENCODER_ARG="
-if not "%ENCODER_NAME%"=="" set "ENCODER_ARG=--encoder-name %ENCODER_NAME%"
-
-set "WINDOW_ARG="
-if not "%WINDOW_SIZE%"=="" set "WINDOW_ARG=--window-size %WINDOW_SIZE%"
-
-set "OVERLAP_ARG="
-if not "%OVERLAP%"=="" set "OVERLAP_ARG=--overlap %OVERLAP%"
-
-set "BATCH_ARG="
-if not "%BATCH_SIZE%"=="" set "BATCH_ARG=--batch-size %BATCH_SIZE%"
-
-set "MIN_AREA_ARG="
-if not "%MIN_AREA%"=="" set "MIN_AREA_ARG=--min-area %MIN_AREA%"
-
-set "SIMPLIFY_ARG="
-if not "%SIMPLIFY%"=="" set "SIMPLIFY_ARG=--simplify-tolerance %SIMPLIFY%"
-
-set "PROB_THRESHOLD_ARG="
-if not "%PROB_THRESHOLD%"=="" set "PROB_THRESHOLD_ARG=--probability-threshold %PROB_THRESHOLD%"
-
-set "LOG_LEVEL_ARG="
-if not "%LOG_LEVEL%"=="" set "LOG_LEVEL_ARG=--log-level %LOG_LEVEL%"
-
-python test_unet.py %STACK_ARG% %RASTER_ARG% --model-path "%MODEL_PATH%" --output-dir "%OUTPUT_DIR%" %MASK_ARG% %VECTOR_ARG% %WINDOW_ARG% %OVERLAP_ARG% %BATCH_ARG% %NUM_CHANNELS_ARG% %NUM_CLASSES_ARG% %ARCH_ARG% %ENCODER_ARG% %MIN_AREA_ARG% %SIMPLIFY_ARG% %PROB_THRESHOLD_ARG% %LOG_LEVEL_ARG%
-if errorlevel 1 goto :py_fail
-
-echo [INFO] UNet inference complete. Outputs saved to %OUTPUT_DIR%
+echo [INFO] Inference complete. Outputs in %OUTPUT_DIR%
 goto :success
-
-:missing_model
-echo [ERROR] MODEL_PATH must point to a trained UNet checkpoint (.pth).
-goto :fail
-
-:missing_inputs
-echo [ERROR] Provide STACK_MANIFEST or TEST_RASTER before running.
-goto :fail
-
-:missing_venv
-echo [ERROR] Python virtual environment not found. Run setup.bat first.
-goto :fail
-
-:py_fail
-echo [ERROR] UNet inference failed.
-goto :fail
 
 :fail
 if defined _stay_open pause

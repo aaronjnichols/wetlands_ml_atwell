@@ -8,16 +8,18 @@ from pathlib import Path
 import shutil
 import stat
 import time
-from typing import Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 import geoai
 import geopandas as gpd
 import rasterio
 from rasterio.crs import CRS
 from rasterio.errors import RasterioIOError
+import json
 
 from ..stacking import RasterStack, StackManifest, load_manifest, rewrite_tile_images
 from ..tiling import analyze_label_tiles, derive_num_channels
+from ..config import TrainingConfig
 
 
 def _prepare_labels(
@@ -96,6 +98,106 @@ def _load_manifests(paths: Optional[Sequence[Path | str]]) -> Sequence[StackMani
     for path in paths:
         manifests.append(load_manifest(path))
     return manifests
+
+
+# =============================================================================
+# Manifest Resolution (moved from train_unet.py)
+# =============================================================================
+
+
+def _is_manifest_index(data: Dict[str, Any]) -> bool:
+    manifests = data.get("manifests")
+    if not isinstance(manifests, list):
+        return False
+    return all(isinstance(item, str) and item for item in manifests)
+
+
+def _is_stack_manifest(data: Dict[str, Any]) -> bool:
+    grid = data.get("grid")
+    sources = data.get("sources")
+    if not isinstance(grid, dict) or "transform" not in grid:
+        return False
+    if not isinstance(sources, list) or not sources:
+        return False
+    return True
+
+
+def _load_json(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _gather_manifest_paths(target: Path, results: List[Path], visited: Set[Path]) -> None:
+    normalized = target.resolve()
+    if normalized in visited:
+        return
+    visited.add(normalized)
+
+    if normalized.is_dir():
+        entries = sorted(normalized.iterdir(), key=lambda path: path.name.lower())
+        for child in entries:
+            if child.is_dir() or child.suffix.lower() == ".json":
+                _gather_manifest_paths(child, results, visited)
+        return
+
+    if normalized.suffix.lower() != ".json":
+        return
+
+    data = _load_json(normalized)
+    if data is None:
+        return
+
+    if _is_manifest_index(data):
+        manifests = data.get("manifests", [])
+        parent = normalized.parent
+        for entry in manifests:
+            entry_path = Path(entry)
+            if not entry_path.is_absolute():
+                entry_path = (parent / entry_path).resolve()
+            else:
+                entry_path = entry_path.resolve()
+            _gather_manifest_paths(entry_path, results, visited)
+        return
+
+    if _is_stack_manifest(data):
+        results.append(normalized)
+        return
+
+
+def _resolve_manifest_paths(stack_manifest: Optional[Union[str, Path]]) -> Sequence[Path]:
+    if stack_manifest is None:
+        return []
+
+    manifest_path = Path(stack_manifest).expanduser().resolve()
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Stack manifest path not found: {manifest_path}")
+
+    resolved: List[Path] = []
+    _gather_manifest_paths(manifest_path, resolved, set())
+
+    unique: List[Path] = []
+    seen: Set[Path] = set()
+    for candidate in resolved:
+        path = candidate.resolve()
+        if path not in seen:
+            if not path.exists():
+                raise FileNotFoundError(f"Stack manifest referenced but not found: {path}")
+            seen.add(path)
+            unique.append(path)
+
+    if not unique:
+        raise FileNotFoundError(
+            f"No stack manifest JSON files discovered for path: {manifest_path}"
+        )
+
+    return unique
+
+
+# =============================================================================
+# Training Orchestration
+# =============================================================================
 
 
 def train_unet(
@@ -340,5 +442,80 @@ def train_unet(
     logging.info("Training complete. Models saved to %s", models_dir)
 
 
-__all__ = ["train_unet"]
+def train_unet_from_config(config: TrainingConfig) -> None:
+    """Run the training workflow from a TrainingConfig object.
 
+    This function handles manifest resolution and default directory computation,
+    then delegates to train_unet() for the actual training workflow.
+
+    Args:
+        config: Validated TrainingConfig instance.
+
+    Raises:
+        FileNotFoundError: If labels or manifests are not found.
+        ValueError: If configuration is invalid.
+    """
+    # Resolve manifest paths if stack_manifest is provided
+    manifest_paths = _resolve_manifest_paths(config.stack_manifest)
+    
+    # Determine base raster and default parent directory for outputs
+    if manifest_paths:
+        first_manifest = load_manifest(manifest_paths[0])
+        naip_source = first_manifest.naip
+        if naip_source is None:
+            raise ValueError("Stack manifest does not include a NAIP source.")
+        base_raster = Path(naip_source.path)
+        default_parent = Path(manifest_paths[0]).parent
+    else:
+        if config.train_raster is None:
+            raise ValueError(
+                "train_raster must be provided when no stack manifest is supplied."
+            )
+        base_raster = config.train_raster
+        if not base_raster.exists():
+            raise FileNotFoundError(f"Training raster not found: {base_raster}")
+        default_parent = base_raster.parent
+    
+    # Compute tiles and models directories with defaults if not specified
+    tiles_dir = (
+        config.tiles_dir 
+        if config.tiles_dir 
+        else default_parent / "tiles"
+    )
+    models_dir = (
+        config.models_dir 
+        if config.models_dir 
+        else tiles_dir / "models_unet"
+    )
+
+    train_unet(
+        labels_path=config.labels_path,
+        tiles_dir=tiles_dir,
+        models_dir=models_dir,
+        train_raster=base_raster,
+        stack_manifest_path=manifest_paths if manifest_paths else None,
+        tile_size=config.tiling.tile_size,
+        stride=config.tiling.stride,
+        buffer_radius=config.tiling.buffer_radius,
+        num_channels_override=config.model.num_channels,
+        num_classes=config.model.num_classes,
+        architecture=config.model.architecture,
+        encoder_name=config.model.encoder_name,
+        encoder_weights=config.model.encoder_weights,
+        batch_size=config.hyperparameters.batch_size,
+        epochs=config.hyperparameters.epochs,
+        learning_rate=config.hyperparameters.learning_rate,
+        weight_decay=config.hyperparameters.weight_decay,
+        seed=config.hyperparameters.seed,
+        val_split=config.hyperparameters.val_split,
+        save_best_only=config.save_best_only,
+        plot_curves=config.plot_curves,
+        target_size=config.target_size,
+        resize_mode=config.resize_mode,
+        num_workers=config.num_workers,
+        checkpoint_path=config.checkpoint_path,
+        resume_training=config.resume_training,
+    )
+
+
+__all__ = ["train_unet", "train_unet_from_config"]

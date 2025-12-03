@@ -7,11 +7,10 @@ from pathlib import Path
 from typing import List, Sequence, Set
 
 import geopandas as gpd
-from shapely.geometry import mapping
 from shapely.geometry.base import BaseGeometry
 
+from ..services.download import TopographyService
 from .config import TopographyStackConfig
-from .download import download_dem_products, fetch_dem_inventory
 from .processing import write_topography_raster
 
 
@@ -86,23 +85,20 @@ def prepare_topography_stack(config: TopographyStackConfig) -> Path:
             )
 
         buffered_geom = _buffer_geometry(config.aoi, config.buffer_meters)
-        geojson = mapping(buffered_geom)
-        bbox = buffered_geom.bounds
-
-        LOGGER.info("Fetching DEM inventory for buffered AOI (buffer=%sm)", config.buffer_meters)
-        products = fetch_dem_inventory(
-            geojson,
-            bbox=bbox,
-            max_results=config.max_products,
+        
+        cache_dir = config.cache_dir or config.output_dir / "raw"
+        LOGGER.info("Fetching DEMs for buffered AOI (buffer=%sm) -> %s", config.buffer_meters, cache_dir)
+        
+        # Use the new TopographyService
+        service = TopographyService()
+        dem_paths = service.download(
+            aoi_geometry=buffered_geom,
+            output_dir=cache_dir,
         )
-        if not products:
+        
+        if not dem_paths:
             raise RuntimeError("No 3DEP DEM products found for buffered AOI; adjust buffer or verify coverage.")
 
-        LOGGER.info("DEM inventory returned %s product(s)", len(products))
-
-        cache_dir = config.cache_dir or config.output_dir / "raw"
-        LOGGER.info("Downloading DEM products to %s", cache_dir)
-        dem_paths = download_dem_products(products, cache_dir)
         LOGGER.info("DEM download complete; %s file(s) ready for mosaicking", len(dem_paths))
 
     topography_path = config.output_dir / "topography_stack.tif"
@@ -111,5 +107,3 @@ def prepare_topography_stack(config: TopographyStackConfig) -> Path:
 
 
 __all__ = ["prepare_topography_stack"]
-
-

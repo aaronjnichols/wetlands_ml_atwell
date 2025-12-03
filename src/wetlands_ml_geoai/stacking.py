@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,7 @@ from rasterio.vrt import WarpedVRT
 from rasterio.windows import Window
 
 FLOAT_NODATA = -9999.0
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -345,7 +347,29 @@ def normalize_stack_array(
 
 
 def rewrite_tile_images(manifest: Union[str, Path, StackManifest], images_dir: Path) -> int:
-    """Rewrite GeoTIFF tiles in-place using the manifest-defined stack."""
+    """Rewrite GeoTIFF tiles in-place using the manifest-defined stack.
+    
+    This function reads tile data from the manifest sources, normalizes all
+    values to [0-1] range, then converts to uint8 [0-255] format for
+    compatibility with geoai's training system.
+    
+    Why uint8?
+        geoai's SemanticSegmentationDataset always divides by 255, assuming
+        uint8 input. By writing uint8 [0-255] tiles, geoai's /255 division
+        produces the correct [0-1] range that neural networks expect.
+        
+        See normalization.py for the full data flow documentation.
+    
+    Args:
+        manifest: Path to manifest JSON or StackManifest object.
+        images_dir: Directory containing tile GeoTIFFs to rewrite.
+        
+    Returns:
+        Number of tiles rewritten.
+    """
+    # Import here to avoid circular dependency
+    from .normalization import to_geoai_format
+    
     manifest_obj = load_manifest(manifest) if not isinstance(manifest, StackManifest) else manifest
     image_paths = sorted(p for p in images_dir.glob("*.tif") if p.is_file())
     if not image_paths:
@@ -357,16 +381,33 @@ def rewrite_tile_images(manifest: Union[str, Path, StackManifest], images_dir: P
             with rasterio.open(tile_path) as tile_src:
                 window = stack.window_from_transform(tile_src.transform, tile_src.width, tile_src.height)
                 data = stack.read_window(window)
+                # Normalize to [0-1] range (handles nodata, clips values)
                 data = normalize_stack_array(data, FLOAT_NODATA)
+                # Convert to uint8 [0-255] for geoai compatibility
+                data = to_geoai_format(data)
                 tile_transform = tile_src.transform
                 tile_height = tile_src.height
                 tile_width = tile_src.width
+            
+            # Update profile for uint8 output
             profile = base_profile.copy()
-            profile.update(width=tile_width, height=tile_height, transform=tile_transform)
+            profile.update(
+                width=tile_width,
+                height=tile_height,
+                transform=tile_transform,
+                dtype="uint8",  # geoai expects uint8 tiles
+                nodata=0,  # uint8 nodata (was FLOAT_NODATA for float32)
+            )
+            
             with rasterio.open(tile_path, "w", **profile) as dst:
                 dst.write(data)
                 for idx, label in enumerate(stack.band_labels, start=1):
                     dst.set_band_description(idx, label)
+                    
+    LOGGER.info(
+        "Rewrote %d tiles as uint8 [0-255] for geoai compatibility",
+        len(image_paths)
+    )
     return len(image_paths)
 
 
