@@ -67,6 +67,7 @@ if not exist "venv312\Scripts\activate.bat" (
 )
 
 call "venv312\Scripts\activate.bat"
+set "PYTHONPATH=src"
 
 REM ------------------------------------------------------------------
 REM Argument Construction
@@ -103,7 +104,7 @@ REM Execution
 REM ------------------------------------------------------------------
 
 echo Running UNet Training...
-python train_unet.py %ARGS%
+python -m wetlands_ml_atwell.train_unet %ARGS%
 
 if errorlevel 1 (
     echo [ERROR] UNet training failed.

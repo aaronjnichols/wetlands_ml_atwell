@@ -37,20 +37,21 @@ if "%YEARS%"=="" (
     exit /b 1
 )
 
-if not exist "venv\Scripts\activate.bat" (
+if not exist "venv312\Scripts\activate.bat" (
     echo [ERROR] Python virtual environment not found. Run setup.bat first.
     pause
     exit /b 1
 )
 
-call "venv\Scripts\activate.bat"
+call "venv312\Scripts\activate.bat"
 if errorlevel 1 (
     echo [ERROR] Failed to activate virtual environment.
     pause
     exit /b 1
 )
+set "PYTHONPATH=src"
 
-python validate_seasonal_pixels.py ^
+python -m wetlands_ml_atwell.validate_seasonal_pixels ^
     --season-raster "%SEASON_RASTER%" ^
     --season-label %SEASON_LABEL% ^
     --years %YEARS% ^

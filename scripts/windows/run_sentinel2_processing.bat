@@ -9,7 +9,7 @@ REM Edit the values below to match your project before running.
 REM ------------------------------------------------------------------
 set "AOI_PATH=data\20251201_MI_NWI_Small_Test\train\aoi_train.gpkg"
 set "YEARS=2021 2022 2023"
-set "OUTPUT_DIR=data\20251201_MI_NWI_Small_Test\train\s2_refactor_test"
+set "OUTPUT_DIR=data\20251201_MI_NWI_Small_Test\train\s2_tmp"
 set "SEASONS=SPR SUM FAL"
 set "NAIP_PATH=data\20251201_MI_NWI_Small_Test\train\rasters\naip.tif"
 set "CLOUD_COVER=60"
@@ -44,6 +44,7 @@ if not exist "venv312\Scripts\activate.bat" (
 )
 
 call "venv312\Scripts\activate.bat"
+set "PYTHONPATH=src"
 
 REM --- Argument Construction ---
 
@@ -80,7 +81,7 @@ if /I "%AUTO_DOWNLOAD_TOPOGRAPHY%"=="true" (
 REM --- Execution ---
 
 echo Running Sentinel-2 Processing...
-python sentinel2_processing.py %ARGS%
+python -m wetlands_ml_atwell.sentinel2.cli %ARGS%
 
 if errorlevel 1 (
     echo [ERROR] Sentinel-2 processing failed.
