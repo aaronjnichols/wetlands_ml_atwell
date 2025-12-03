@@ -1,4 +1,4 @@
-"""Configuration management for wetlands_ml_geoai.
+"""Configuration management for wetlands_ml_atwell.
 
 This module provides dataclass-based configuration objects for training and inference
 workflows, with support for validation and YAML-based configuration files.

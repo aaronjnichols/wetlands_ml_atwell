@@ -1,4 +1,4 @@
-"""CLI argument parsing and configuration building for wetlands_ml_geoai."""
+"""CLI argument parsing and configuration building for wetlands_ml_atwell."""
 
 import argparse
 import os

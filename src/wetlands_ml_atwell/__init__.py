@@ -1,4 +1,4 @@
-﻿"""Core wetlands ML GeoAI modules."""
+﻿"""Core wetlands ML Atwell modules."""
 
 __all__ = [
     "sentinel2_processing",

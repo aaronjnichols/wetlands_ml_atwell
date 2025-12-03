@@ -1,10 +1,10 @@
-# Wetlands ML GeoAI Pipeline Overview
+# Wetlands ML Atwell Pipeline Overview
 
 This document summarizes the major data and control flows in the current codebase. It serves as a baseline reference before the refactor described in `ref.plan.md`.
 
 ## Training Pipelines
 
-- Entrypoints: `train_unet.py` located both at project root (CLI shim) and in `src/wetlands_ml_geoai/` (full implementation).
+- Entrypoints: `train_unet.py` located both at project root (CLI shim) and in `src/wetlands_ml_atwell/` (full implementation).
 - Shared flow:
   1. Parse CLI arguments/env vars to resolve raster, labels, manifest (single file or directory of manifests), tiling, and optimization parameters.
   2. Expand paths, validate existence, and derive a tile export directory.
@@ -32,7 +32,7 @@ This document summarizes the major data and control flows in the current codebas
 ## Sentinel-2 Seasonal Processing
 
 - Entrypoint: `sentinel2_processing.py` (root and `src/`).
-- Combined responsibilities inside `src/wetlands_ml_geoai/sentinel2_processing.py`:
+- Combined responsibilities inside `src/wetlands_ml_atwell/sentinel2_processing.py`:
   - Argument parsing and CLI dispatch.
   - AOI parsing (files, inline JSON, bbox lists, or WKT strings).
   - NAIP reference preparation, including mosaicking, resampling, and manifest scaffolding. Multiple disjoint AOI polygons are processed independently, with Sentinel-2 composites and NAIP/topography rasters clipped per AOI.

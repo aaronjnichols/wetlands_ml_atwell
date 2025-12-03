@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 
-from wetlands_ml_geoai import test_unet
-from wetlands_ml_geoai.inference.unet_stream import _prepare_window
-from wetlands_ml_geoai.stacking import FLOAT_NODATA, normalize_stack_array
+from wetlands_ml_atwell import test_unet
+from wetlands_ml_atwell.inference.unet_stream import _prepare_window
+from wetlands_ml_atwell.stacking import FLOAT_NODATA, normalize_stack_array
 
 
 def test_inference_cli_requires_inputs():

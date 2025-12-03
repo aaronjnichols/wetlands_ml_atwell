@@ -1,4 +1,4 @@
-"""Configuration dataclasses for wetlands_ml_geoai workflows.
+"""Configuration dataclasses for wetlands_ml_atwell workflows.
 
 These dataclasses provide validated, type-safe configuration for training
 and inference pipelines. They can be instantiated from CLI arguments,

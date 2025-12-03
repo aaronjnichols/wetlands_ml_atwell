@@ -12,13 +12,13 @@ class TestTrainingCliSmoke:
 
     def test_training_module_imports(self):
         """The train_unet module should be importable."""
-        from wetlands_ml_geoai import train_unet
+        from wetlands_ml_atwell import train_unet
         assert hasattr(train_unet, "main")
         assert hasattr(train_unet, "parse_args")
 
     def test_parser_requires_labels(self):
         """The parser should require --labels argument."""
-        from wetlands_ml_geoai.train_unet import parse_args
+        from wetlands_ml_atwell.train_unet import parse_args
         
         with pytest.raises(SystemExit):
             # Has raster but no labels
@@ -28,7 +28,7 @@ class TestTrainingCliSmoke:
 
     def test_parser_requires_input_source(self):
         """The parser should require either --train-raster or --stack-manifest."""
-        from wetlands_ml_geoai.train_unet import parse_args
+        from wetlands_ml_atwell.train_unet import parse_args
         
         with pytest.raises(SystemExit):
             # Has labels but no raster/manifest
@@ -38,7 +38,7 @@ class TestTrainingCliSmoke:
 
     def test_parser_accepts_train_raster(self, minimal_raster_path, mock_labels_gpkg):
         """The parser should accept --train-raster with --labels."""
-        from wetlands_ml_geoai.train_unet import parse_args
+        from wetlands_ml_atwell.train_unet import parse_args
         
         args = parse_args([
             "--train-raster", str(minimal_raster_path),
@@ -50,7 +50,7 @@ class TestTrainingCliSmoke:
 
     def test_parser_accepts_stack_manifest(self, mock_stack_manifest, mock_labels_gpkg):
         """The parser should accept --stack-manifest with --labels."""
-        from wetlands_ml_geoai.train_unet import parse_args
+        from wetlands_ml_atwell.train_unet import parse_args
         
         args = parse_args([
             "--stack-manifest", str(mock_stack_manifest),
@@ -62,7 +62,7 @@ class TestTrainingCliSmoke:
 
     def test_parser_accepts_training_hyperparameters(self, minimal_raster_path, mock_labels_gpkg):
         """The parser should accept training hyperparameters."""
-        from wetlands_ml_geoai.train_unet import parse_args
+        from wetlands_ml_atwell.train_unet import parse_args
         
         args = parse_args([
             "--train-raster", str(minimal_raster_path),
@@ -82,7 +82,7 @@ class TestTrainingCliSmoke:
 
     def test_parser_accepts_model_architecture(self, minimal_raster_path, mock_labels_gpkg):
         """The parser should accept model architecture options."""
-        from wetlands_ml_geoai.train_unet import parse_args
+        from wetlands_ml_atwell.train_unet import parse_args
         
         args = parse_args([
             "--train-raster", str(minimal_raster_path),
@@ -102,13 +102,13 @@ class TestInferenceCliSmoke:
 
     def test_inference_module_imports(self):
         """The test_unet module should be importable."""
-        from wetlands_ml_geoai import test_unet
+        from wetlands_ml_atwell import test_unet
         assert hasattr(test_unet, "main")
         assert hasattr(test_unet, "parse_args")
 
     def test_parser_requires_model_path(self):
         """The parser should require --model-path argument."""
-        from wetlands_ml_geoai.test_unet import parse_args
+        from wetlands_ml_atwell.test_unet import parse_args
         
         with pytest.raises(SystemExit):
             # Has raster but no model
@@ -118,7 +118,7 @@ class TestInferenceCliSmoke:
 
     def test_parser_requires_input_source(self, tmp_path):
         """The parser should require either --test-raster or --stack-manifest."""
-        from wetlands_ml_geoai.test_unet import parse_args
+        from wetlands_ml_atwell.test_unet import parse_args
         
         # Create a fake model file
         model_path = tmp_path / "model.pth"
@@ -132,7 +132,7 @@ class TestInferenceCliSmoke:
 
     def test_parser_accepts_test_raster(self, minimal_raster_path, tmp_path):
         """The parser should accept --test-raster with --model-path."""
-        from wetlands_ml_geoai.test_unet import parse_args
+        from wetlands_ml_atwell.test_unet import parse_args
         
         # Create a fake model file
         model_path = tmp_path / "model.pth"
@@ -148,7 +148,7 @@ class TestInferenceCliSmoke:
 
     def test_parser_accepts_stack_manifest(self, mock_stack_manifest, tmp_path):
         """The parser should accept --stack-manifest with --model-path."""
-        from wetlands_ml_geoai.test_unet import parse_args
+        from wetlands_ml_atwell.test_unet import parse_args
         
         # Create a fake model file
         model_path = tmp_path / "model.pth"
@@ -164,7 +164,7 @@ class TestInferenceCliSmoke:
 
     def test_parser_accepts_inference_options(self, minimal_raster_path, tmp_path):
         """The parser should accept inference options."""
-        from wetlands_ml_geoai.test_unet import parse_args
+        from wetlands_ml_atwell.test_unet import parse_args
         
         # Create a fake model file
         model_path = tmp_path / "model.pth"
@@ -186,7 +186,7 @@ class TestInferenceCliSmoke:
 
     def test_parser_accepts_output_paths(self, minimal_raster_path, tmp_path):
         """The parser should accept output path options."""
-        from wetlands_ml_geoai.test_unet import parse_args
+        from wetlands_ml_atwell.test_unet import parse_args
         
         # Create a fake model file
         model_path = tmp_path / "model.pth"
@@ -210,7 +210,7 @@ class TestStackingIntegration:
 
     def test_raster_stack_loads_from_manifest(self, mock_stack_manifest):
         """RasterStack should load from our mock manifest."""
-        from wetlands_ml_geoai.stacking import RasterStack
+        from wetlands_ml_atwell.stacking import RasterStack
         
         with RasterStack(mock_stack_manifest) as stack:
             assert stack.band_count == 4  # 4 NAIP bands
@@ -221,7 +221,7 @@ class TestStackingIntegration:
     def test_raster_stack_reads_window(self, mock_stack_manifest):
         """RasterStack should read windows from the mock raster."""
         from rasterio.windows import Window
-        from wetlands_ml_geoai.stacking import RasterStack
+        from wetlands_ml_atwell.stacking import RasterStack
         
         with RasterStack(mock_stack_manifest) as stack:
             window = Window(0, 0, 32, 32)
@@ -238,7 +238,7 @@ class TestManifestResolution:
 
     def test_resolve_single_manifest(self, mock_stack_manifest):
         """_resolve_manifest_paths should find a single manifest."""
-        from wetlands_ml_geoai.training.unet import _resolve_manifest_paths
+        from wetlands_ml_atwell.training.unet import _resolve_manifest_paths
         
         paths = _resolve_manifest_paths(str(mock_stack_manifest))
         
@@ -247,7 +247,7 @@ class TestManifestResolution:
 
     def test_resolve_manifest_index(self, mock_manifest_index, mock_stack_manifest):
         """_resolve_manifest_paths should resolve manifest index."""
-        from wetlands_ml_geoai.training.unet import _resolve_manifest_paths
+        from wetlands_ml_atwell.training.unet import _resolve_manifest_paths
         
         paths = _resolve_manifest_paths(str(mock_manifest_index))
         

@@ -5,15 +5,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from wetlands_ml_geoai.config import (
+from wetlands_ml_atwell.config import (
     TrainingConfig,
     InferenceConfig,
     TilingConfig,
     ModelConfig,
     TrainingHyperparameters,
 )
-from wetlands_ml_geoai.training.unet import train_unet_from_config
-from wetlands_ml_geoai.inference.unet_stream import infer_from_config
+from wetlands_ml_atwell.training.unet import train_unet_from_config
+from wetlands_ml_atwell.inference.unet_stream import infer_from_config
 
 
 @pytest.fixture
@@ -55,7 +55,7 @@ def test_train_wiring_calls_core_function(valid_training_config):
     """Test that train_unet_from_config calls the core train_unet function."""
     
     # Patch the train_unet function inside the module where it is defined
-    with patch("wetlands_ml_geoai.training.unet.train_unet") as mock_train:
+    with patch("wetlands_ml_atwell.training.unet.train_unet") as mock_train:
         mock_train.return_value = Path("model.pth")
         
         train_unet_from_config(valid_training_config)
@@ -72,7 +72,7 @@ def test_train_wiring_calls_core_function(valid_training_config):
 def test_infer_wiring_calls_geoai(valid_inference_config):
     """Test that infer_from_config calls geoai.semantic_segmentation for rasters."""
     
-    with patch("wetlands_ml_geoai.inference.unet_stream.geoai") as mock_geoai:
+    with patch("wetlands_ml_atwell.inference.unet_stream.geoai") as mock_geoai:
         # Mock rasterio.open to return channel count
         with patch("rasterio.open") as mock_open:
             mock_src = MagicMock()

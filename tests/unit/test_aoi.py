@@ -7,7 +7,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import MultiPolygon, Polygon, box
 
-from wetlands_ml_geoai.sentinel2.aoi import (
+from wetlands_ml_atwell.sentinel2.aoi import (
     parse_aoi,
     buffer_in_meters,
     extract_aoi_polygons,

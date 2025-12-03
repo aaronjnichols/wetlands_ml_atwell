@@ -4,10 +4,10 @@ Wetlands ML GeoAI’s core flows (Sentinel-2 compositing, NAIP/topography stacki
 ## Current State Analysis
 
 ### Sentinel-2 Seasonal Pipeline
-`src/wetlands_ml_geoai/sentinel2/compositing.py` hosts most of the orchestration logic, including CLI behavior, AOI parsing, STAC calls, NAIP/topography downloads, manifest creation, and progress tracking inside `run_pipeline`.
+`src/wetlands_ml_atwell/sentinel2/compositing.py` hosts most of the orchestration logic, including CLI behavior, AOI parsing, STAC calls, NAIP/topography downloads, manifest creation, and progress tracking inside `run_pipeline`.
 
 ```
-622:810:src/wetlands_ml_geoai/sentinel2/compositing.py
+622:810:src/wetlands_ml_atwell/sentinel2/compositing.py
 def run_pipeline(
     aoi: str,
     years: Sequence[int],
@@ -31,10 +31,10 @@ def run_pipeline(
 This single function owns dependency discovery (`geoai`, `stackstac`, `pystac_client`, `geopandas`, NAIP downloads, wetlands service calls, and DEM pipelines), making it hard to unit test or selectively reuse pieces (e.g., only computing Sentinel composites without manifests).
 
 ### Training & Inference Workflows
-Argument parsing, configuration, tiling, manifest resolution, and geoai integration live in `src/wetlands_ml_geoai/train_unet.py` and `src/wetlands_ml_geoai/training/unet.py`. The CLI defines dozens of arguments and environment variable fallbacks inline.
+Argument parsing, configuration, tiling, manifest resolution, and geoai integration live in `src/wetlands_ml_atwell/train_unet.py` and `src/wetlands_ml_atwell/training/unet.py`. The CLI defines dozens of arguments and environment variable fallbacks inline.
 
 ```
-149:342:src/wetlands_ml_geoai/train_unet.py
+149:342:src/wetlands_ml_atwell/train_unet.py
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Prepare tiles and train a wetlands UNet semantic segmentation model."
@@ -53,7 +53,7 @@ def parse_args() -> argparse.Namespace:
 Tile export, manifest rewriting, staging-directory cleanup, and geoai invocation then execute imperatively within `training/unet.py`.
 
 ```
-191:340:src/wetlands_ml_geoai/training/unet.py
+191:340:src/wetlands_ml_atwell/training/unet.py
 if manifests:
     for idx, manifest in enumerate(manifests):
         ...
@@ -83,7 +83,7 @@ While `data_acquisition.py` already exposes `_download_naip_tiles`, the checked-
 5:32:tools/naip_download.py
 # user inputs
 output_dir = r"data\IL\naip_tiles"
-aoi_gpkg = r"C:\_code\python\wetlands_ml_codex\data\IL\test_aoi.gpkg"
+aoi_gpkg = r"C:\_code\python\wetlands_ml_atwell\data\IL\test_aoi.gpkg"
 ...
 naip_paths = download_naip(
     aoi_bbox,
@@ -156,7 +156,7 @@ def test_prepare_window_matches_training_normalization():
 - **Goal**: Centralize NAIP/wetlands/topography download logic and manifest writing.
 - **Key steps**:
   - Promote `_download_naip_tiles`/`_download_wetlands_delineations` to public services with explicit interfaces and retry/backoff policies.
-  - Replace `tools/naip_download.py` with a CLI thin wrapper that imports the shared service (or add `python -m wetlands_ml_geoai.tools.naip`).
+  - Replace `tools/naip_download.py` with a CLI thin wrapper that imports the shared service (or add `python -m wetlands_ml_atwell.tools.naip`).
   - Create a `manifest` service that encapsulates NAIP footprint filtering and manifest index writing, enabling reuse by training and inference flows.
   - Add filesystem abstraction hooks (e.g., `PathService`) for easier testing and remote storage support.
 - **Intermediate state**: Keep existing internal function names but re-export from a new module to avoid breaking imports, then update all callsites (`sentinel2`, `train_unet`, tests) to use the shared service before removing leading underscores.

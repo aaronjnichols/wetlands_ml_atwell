@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from wetlands_ml_geoai.sentinel2.cloud_masking import (
+from wetlands_ml_atwell.sentinel2.cloud_masking import (
     SCL_ASSET_ID,
     SCL_MASK_VALUES,
     build_mask,

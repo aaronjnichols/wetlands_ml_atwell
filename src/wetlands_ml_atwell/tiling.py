@@ -1,4 +1,4 @@
-"""Shared tiling helpers for wetlands_ml_geoai training pipelines."""
+"""Shared tiling helpers for wetlands_ml_atwell training pipelines."""
 
 from __future__ import annotations
 

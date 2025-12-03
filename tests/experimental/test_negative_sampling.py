@@ -259,8 +259,8 @@ def main():
     # Real Data Paths
     # Using raw strings for Windows paths
     aoi_path = base_dir / "aoi.gpkg"
-    atwell_path = Path(r"C:\_code\python\wetlands_ml_codex\data\Atwell_Wetlands_MI.gpkg")
-    nwi_path = Path(r"C:\_code\python\wetlands_ml_codex\data\NWI\MI_Wetlands_Geopackage.gpkg")
+    atwell_path = Path(r"C:\_code\python\wetlands_ml_atwell\data\Atwell_Wetlands_MI.gpkg")
+    nwi_path = Path(r"C:\_code\python\wetlands_ml_atwell\data\NWI\MI_Wetlands_Geopackage.gpkg")
     
     # 1. Load Real Data
     try:

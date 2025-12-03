@@ -1,4 +1,4 @@
-"""Shared inference utilities for wetlands_ml_geoai."""
+"""Shared inference utilities for wetlands_ml_atwell."""
 
 from __future__ import annotations
 

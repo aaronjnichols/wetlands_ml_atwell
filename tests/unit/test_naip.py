@@ -1,4 +1,4 @@
-"""Unit tests for wetlands_ml_geoai.sentinel2.naip module."""
+"""Unit tests for wetlands_ml_atwell.sentinel2.naip module."""
 
 import tempfile
 from pathlib import Path
@@ -11,7 +11,7 @@ from rasterio.crs import CRS
 from rasterio.transform import from_bounds
 from shapely.geometry import Polygon, box
 
-from wetlands_ml_geoai.sentinel2.naip import (
+from wetlands_ml_atwell.sentinel2.naip import (
     collect_naip_sources,
     prepare_naip_reference,
     _load_naip_footprint,
@@ -402,7 +402,7 @@ class TestNaipModuleImports:
     
     def test_imports_from_sentinel2_package(self):
         """Should be importable from sentinel2 package."""
-        from wetlands_ml_geoai.sentinel2 import (
+        from wetlands_ml_atwell.sentinel2 import (
             collect_naip_sources,
             prepare_naip_reference,
         )
@@ -411,7 +411,7 @@ class TestNaipModuleImports:
     
     def test_all_exports_defined(self):
         """Should have __all__ defined with expected exports."""
-        from wetlands_ml_geoai.sentinel2 import naip
+        from wetlands_ml_atwell.sentinel2 import naip
         
         expected = [
             "collect_naip_sources",

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from wetlands_ml_geoai.normalization import (
+from wetlands_ml_atwell.normalization import (
     to_geoai_format,
     prepare_for_model,
     GEOAI_EXPECTED_INPUT_DTYPE,

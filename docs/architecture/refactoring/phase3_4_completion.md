@@ -7,22 +7,22 @@ This document summarizes the completion of Phases 3 (Data Services) and 4 (Train
 
 ## Key Changes
 
-### 1. Unified Configuration Layer (`src/wetlands_ml_geoai/config/`)
+### 1. Unified Configuration Layer (`src/wetlands_ml_atwell/config/`)
 *   **New File:** `cli.py`
     *   Centralizes `argparse` logic for both training and inference.
     *   Provides `build_training_config` and `build_inference_config` factories.
     *   Eliminates duplicated argument parsing code in CLI scripts.
 
 ### 2. Streamlined Entry Points
-*   **Training:** `src/wetlands_ml_geoai/training/unet.py`
+*   **Training:** `src/wetlands_ml_atwell/training/unet.py`
     *   Added `train_unet_from_config(config: TrainingConfig)`.
     *   Wrapper handles manifest resolution, default path computation, and delegation to core logic.
-*   **Inference:** `src/wetlands_ml_geoai/inference/unet_stream.py`
+*   **Inference:** `src/wetlands_ml_atwell/inference/unet_stream.py`
     *   Added `infer_from_config(config: InferenceConfig)`.
     *   Wrapper handles model loading, path resolution, and execution of streaming inference.
 *   **CLI Scripts:** `train_unet.py` and `test_unet.py` are now thin wrappers around these config builders and functions.
 
-### 3. Data Acquisition Services (`src/wetlands_ml_geoai/services/`)
+### 3. Data Acquisition Services (`src/wetlands_ml_atwell/services/`)
 *   **New Module:** `download.py`
     *   Introduced `NaipService`, `WetlandsService`, and `TopographyService`.
     *   Consolidated logic from legacy `data_acquisition.py` and `topography/download.py`.
@@ -34,8 +34,8 @@ This document summarizes the completion of Phases 3 (Data Services) and 4 (Train
 
 ### 4. Cleanup
 *   **Deleted:** `src/wetlands/` (stale artifact).
-*   **Deleted:** `src/wetlands_ml_geoai/data_acquisition.py`.
-*   **Deleted:** `src/wetlands_ml_geoai/topography/download.py`.
+*   **Deleted:** `src/wetlands_ml_atwell/data_acquisition.py`.
+*   **Deleted:** `src/wetlands_ml_atwell/topography/download.py`.
 *   **Resolved:** Circular dependencies in `topography` and `sentinel2` modules.
 
 ## Current Architecture Status

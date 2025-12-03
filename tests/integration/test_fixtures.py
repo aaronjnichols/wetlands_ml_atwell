@@ -61,7 +61,7 @@ class TestMockStackManifest:
 
     def test_manifest_can_be_loaded(self, mock_stack_manifest):
         """The manifest should be loadable by the stacking module."""
-        from wetlands_ml_geoai.stacking import load_manifest
+        from wetlands_ml_atwell.stacking import load_manifest
         
         manifest = load_manifest(mock_stack_manifest)
         assert manifest.grid is not None

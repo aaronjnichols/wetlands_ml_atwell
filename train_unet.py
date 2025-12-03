@@ -5,11 +5,11 @@ SRC = Path(__file__).resolve().parent / "src"
 if SRC.exists() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from wetlands_ml_geoai.train_unet import *  # noqa: F401,F403
+from wetlands_ml_atwell.train_unet import *  # noqa: F401,F403
 
 
 def main() -> None:
-    from wetlands_ml_geoai.train_unet import main as _main
+    from wetlands_ml_atwell.train_unet import main as _main
 
     _main()
 

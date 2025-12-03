@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from wetlands_ml_geoai.sentinel2.stac_client import (
+from wetlands_ml_atwell.sentinel2.stac_client import (
     SENTINEL_BANDS,
     SENTINEL_COLLECTION,
     SENTINEL_SCALE_FACTOR,
@@ -158,7 +158,7 @@ class TestStackBandsValidation:
 
     def test_stack_bands_empty_items_raises(self):
         """Should raise ValueError when items list is empty."""
-        from wetlands_ml_geoai.sentinel2.stac_client import stack_bands
+        from wetlands_ml_atwell.sentinel2.stac_client import stack_bands
         
         with pytest.raises(ValueError, match="No Sentinel-2 items"):
             stack_bands([], (-85.5, 41.5, -85.0, 42.0))

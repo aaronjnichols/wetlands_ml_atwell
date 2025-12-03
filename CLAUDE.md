@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Wetlands ML GeoAI is a Python package for wetland semantic segmentation using satellite imagery. It provides pipelines for Sentinel-2 seasonal compositing, NAIP imagery integration, topography feature extraction, UNet model training, and sliding-window inference.
+Wetlands ML Atwell is a Python package for wetland semantic segmentation using satellite imagery. It provides pipelines for Sentinel-2 seasonal compositing, NAIP imagery integration, topography feature extraction, UNet model training, and sliding-window inference.
 
 ## Common Commands
 
@@ -17,14 +17,14 @@ setup.bat
 ### Running the Main Workflows
 ```bash
 # Data acquisition and compositing
-python -m wetlands_ml_geoai.sentinel2 --aoi path/to/aoi.geojson --years 2022 2023 --output-dir data/stacks
+python -m wetlands_ml_atwell.sentinel2 --aoi path/to/aoi.geojson --years 2022 2023 --output-dir data/stacks
 
 # Training (CLI or YAML config)
-python -m wetlands_ml_geoai.train_unet --train-raster data/stack.tif --labels data/labels.gpkg
-python -m wetlands_ml_geoai.train_unet --config configs/train.yaml
+python -m wetlands_ml_atwell.train_unet --train-raster data/stack.tif --labels data/labels.gpkg
+python -m wetlands_ml_atwell.train_unet --config configs/train.yaml
 
 # Inference
-python -m wetlands_ml_geoai.test_unet --test-raster data/stack.tif --model-path models/best_model.pth
+python -m wetlands_ml_atwell.test_unet --test-raster data/stack.tif --model-path models/best_model.pth
 ```
 
 ### Testing

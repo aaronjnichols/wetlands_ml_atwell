@@ -1,4 +1,4 @@
-"""YAML configuration file loading for wetlands_ml_geoai.
+"""YAML configuration file loading for wetlands_ml_atwell.
 
 This module provides functions to load TrainingConfig and InferenceConfig
 from YAML files, with validation and sensible error messages.

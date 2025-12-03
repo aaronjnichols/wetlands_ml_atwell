@@ -1,4 +1,4 @@
-"""UNet sliding-window inference for wetlands_ml_geoai."""
+"""UNet sliding-window inference for wetlands_ml_atwell."""
 
 from __future__ import annotations
 

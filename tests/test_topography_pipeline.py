@@ -9,9 +9,9 @@ from shapely.geometry import box
 
 import pytest
 
-from wetlands_ml_geoai.topography.config import TopographyStackConfig
-from wetlands_ml_geoai.topography.pipeline import prepare_topography_stack
-from wetlands_ml_geoai.topography.processing import _compute_tpi, write_topography_raster
+from wetlands_ml_atwell.topography.config import TopographyStackConfig
+from wetlands_ml_atwell.topography.pipeline import prepare_topography_stack
+from wetlands_ml_atwell.topography.processing import _compute_tpi, write_topography_raster
 
 
 def test_write_topography_raster_writes_four_bands(tmp_path: Path) -> None:
@@ -96,7 +96,7 @@ def test_prepare_topography_stack_uses_local_dems(tmp_path: Path, monkeypatch: p
         raise AssertionError("Remote DEM fetching should be skipped when dem_paths are provided")
 
     monkeypatch.setattr(
-        "wetlands_ml_geoai.services.download.TopographyService.download",
+        "wetlands_ml_atwell.services.download.TopographyService.download",
         _should_not_run,
     )
 

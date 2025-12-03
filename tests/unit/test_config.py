@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 
-from wetlands_ml_geoai.config import (
+from wetlands_ml_atwell.config import (
     TilingConfig,
     ModelConfig,
     TrainingHyperparameters,

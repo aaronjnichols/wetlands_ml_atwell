@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from wetlands_ml_geoai import train_unet
+from wetlands_ml_atwell import train_unet
 
 
 def test_training_cli_requires_inputs():

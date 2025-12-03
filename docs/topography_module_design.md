@@ -2,19 +2,19 @@
 
 ## Package Layout
 
-- `src/wetlands_ml_geoai/topography/__init__.py`
+- `src/wetlands_ml_atwell/topography/__init__.py`
   - Export public helpers: `prepare_topography_stack`, `TopographyStackConfig`.
-- `src/wetlands_ml_geoai/topography/config.py`
+- `src/wetlands_ml_atwell/topography/config.py`
   - Dataclasses for AOI, buffer distance (meters), DEM resolution, local cache paths, optional pre-downloaded DEM sources, and manifest interaction.
-- `src/wetlands_ml_geoai/topography/download.py`
+- `src/wetlands_ml_atwell/topography/download.py`
   - `_fetch_3dep_inventory` to query TNM Access API.
   - `_download_products` to stream GeoTIFFs with caching; returns metadata records.
   - `_prepare_dem_tiles` to reproject/resample downloaded tiles to stack CRS.
-- `src/wetlands_ml_geoai/topography/processing.py`
+- `src/wetlands_ml_atwell/topography/processing.py`
   - `_mosaic_buffered_dem` to stitch buffered DEM array aligned to NAIP grid.
   - `_compute_slope`, `_compute_tpi`, `_compute_depression_depth` using rasterio/numpy/scipy.
   - `_write_derivative_raster` to crop to the training extent and set band names.
-- `src/wetlands_ml_geoai/topography/cli.py`
+- `src/wetlands_ml_atwell/topography/cli.py`
   - Argument parsing mirroring `sentinel2.cli` options (AOI path, buffer meters, output dir, manifest path).
   - Calls `prepare_topography_stack` and prints manifest guidance.
 

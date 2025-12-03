@@ -16,13 +16,13 @@ class TestSentinel2CliParsing:
 
     def test_cli_module_imports(self):
         """The sentinel2.cli module should be importable."""
-        from wetlands_ml_geoai.sentinel2 import cli
+        from wetlands_ml_atwell.sentinel2 import cli
         assert hasattr(cli, "main")
         assert hasattr(cli, "build_parser")
 
     def test_parser_requires_aoi(self):
         """The parser should require --aoi argument."""
-        from wetlands_ml_geoai.sentinel2.cli import build_parser
+        from wetlands_ml_atwell.sentinel2.cli import build_parser
         
         parser = build_parser()
         with pytest.raises(SystemExit):
@@ -31,7 +31,7 @@ class TestSentinel2CliParsing:
 
     def test_parser_requires_years(self):
         """The parser should require --years argument."""
-        from wetlands_ml_geoai.sentinel2.cli import build_parser
+        from wetlands_ml_atwell.sentinel2.cli import build_parser
         
         parser = build_parser()
         with pytest.raises(SystemExit):
@@ -40,7 +40,7 @@ class TestSentinel2CliParsing:
 
     def test_parser_requires_output_dir(self):
         """The parser should require --output-dir argument."""
-        from wetlands_ml_geoai.sentinel2.cli import build_parser
+        from wetlands_ml_atwell.sentinel2.cli import build_parser
         
         parser = build_parser()
         with pytest.raises(SystemExit):
@@ -49,7 +49,7 @@ class TestSentinel2CliParsing:
 
     def test_parser_accepts_valid_args(self):
         """The parser should accept all required arguments."""
-        from wetlands_ml_geoai.sentinel2.cli import build_parser
+        from wetlands_ml_atwell.sentinel2.cli import build_parser
         
         parser = build_parser()
         args = parser.parse_args([
@@ -64,7 +64,7 @@ class TestSentinel2CliParsing:
 
     def test_parser_accepts_optional_args(self):
         """The parser should accept optional arguments."""
-        from wetlands_ml_geoai.sentinel2.cli import build_parser
+        from wetlands_ml_atwell.sentinel2.cli import build_parser
         
         parser = build_parser()
         args = parser.parse_args([
@@ -86,13 +86,13 @@ class TestSentinel2Compositing:
 
     def test_compositing_module_imports(self):
         """The compositing module should be importable."""
-        from wetlands_ml_geoai.sentinel2 import compositing
+        from wetlands_ml_atwell.sentinel2 import compositing
         assert hasattr(compositing, "run_pipeline")
         assert hasattr(compositing, "parse_aoi")
 
     def test_parse_aoi_with_bbox_string(self):
         """parse_aoi should accept bbox as comma-separated string."""
-        from wetlands_ml_geoai.sentinel2.compositing import parse_aoi
+        from wetlands_ml_atwell.sentinel2.compositing import parse_aoi
         
         # Simple bounding box
         geom = parse_aoi("-85.5,41.5,-85.0,42.0")
@@ -106,7 +106,7 @@ class TestSentinel2Compositing:
 
     def test_parse_aoi_with_wkt(self):
         """parse_aoi should accept WKT geometry."""
-        from wetlands_ml_geoai.sentinel2.compositing import parse_aoi
+        from wetlands_ml_atwell.sentinel2.compositing import parse_aoi
         
         wkt = "POLYGON ((-85.5 41.5, -85.0 41.5, -85.0 42.0, -85.5 42.0, -85.5 41.5))"
         geom = parse_aoi(wkt)
@@ -117,7 +117,7 @@ class TestSentinel2Compositing:
 
     def test_parse_aoi_with_geojson(self):
         """parse_aoi should accept GeoJSON string."""
-        from wetlands_ml_geoai.sentinel2.compositing import parse_aoi
+        from wetlands_ml_atwell.sentinel2.compositing import parse_aoi
         
         geojson = json.dumps({
             "type": "Polygon",
@@ -136,7 +136,7 @@ class TestSentinel2Compositing:
 
     def test_parse_aoi_with_gpkg_file(self, mock_labels_gpkg):
         """parse_aoi should accept GeoPackage file path."""
-        from wetlands_ml_geoai.sentinel2.compositing import parse_aoi
+        from wetlands_ml_atwell.sentinel2.compositing import parse_aoi
         
         geom = parse_aoi(str(mock_labels_gpkg))
         
@@ -151,7 +151,7 @@ class TestSentinel2PipelineWithMocks:
     def test_pipeline_validates_naip_paths(self, tmp_path):
         """Pipeline should raise error for non-existent NAIP paths."""
         from rasterio.errors import RasterioIOError
-        from wetlands_ml_geoai.sentinel2.compositing import run_pipeline
+        from wetlands_ml_atwell.sentinel2.compositing import run_pipeline
         
         # The pipeline raises RasterioIOError when it tries to read footprints
         # from a non-existent file
@@ -163,7 +163,7 @@ class TestSentinel2PipelineWithMocks:
                 naip_paths=[tmp_path / "nonexistent.tif"],
             )
 
-    @patch("wetlands_ml_geoai.sentinel2.compositing.Client")
+    @patch("wetlands_ml_atwell.sentinel2.compositing.Client")
     def test_pipeline_creates_output_directory(
         self,
         mock_stac_client,
@@ -171,7 +171,7 @@ class TestSentinel2PipelineWithMocks:
         minimal_raster_path,
     ):
         """Pipeline should create output directory if it doesn't exist."""
-        from wetlands_ml_geoai.sentinel2.compositing import run_pipeline
+        from wetlands_ml_atwell.sentinel2.compositing import run_pipeline
         
         output_dir = tmp_path / "new_output"
         assert not output_dir.exists()

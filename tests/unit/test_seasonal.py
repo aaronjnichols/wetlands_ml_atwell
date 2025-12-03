@@ -7,7 +7,7 @@ import pytest
 import rasterio
 import xarray as xr
 
-from wetlands_ml_geoai.sentinel2.seasonal import (
+from wetlands_ml_atwell.sentinel2.seasonal import (
     concatenate_seasons,
     write_dataarray,
     SENTINEL_BANDS,

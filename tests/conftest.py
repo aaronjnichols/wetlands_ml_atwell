@@ -1,4 +1,4 @@
-"""Shared test fixtures for wetlands_ml_geoai tests."""
+"""Shared test fixtures for wetlands_ml_atwell tests."""
 
 import json
 from pathlib import Path

@@ -36,8 +36,8 @@ This plan proposes a phased refactoring approach that extracts cohesive services
 ### Architecture Overview
 
 ```
-wetlands_ml_codex/
-├── src/wetlands_ml_geoai/
+wetlands_ml_atwell/
+├── src/wetlands_ml_atwell/
 │   ├── __init__.py                    # Minimal exports
 │   ├── data_acquisition.py            # NAIP/wetlands download (253 LOC)
 │   ├── stacking.py                    # RasterStack + normalization (383 LOC)
@@ -260,7 +260,7 @@ Model predicts on [0, 0.004] ✓
 |----|----------|-------|----------|--------|
 | N1 | Naming | Inconsistent module naming | Various | Cognitive load |
 | N2 | Style | Repeated sys.path manipulation | Root CLI shims | Boilerplate |
-| N3 | Documentation | `__init__.py` exports incomplete | `src/wetlands_ml_geoai/` | Import confusion |
+| N3 | Documentation | `__init__.py` exports incomplete | `src/wetlands_ml_atwell/` | Import confusion |
 
 ---
 
@@ -279,7 +279,7 @@ Model predicts on [0, 0.004] ✓
    markers = ["slow: marks tests as slow"]
    
    [tool.coverage.run]
-   source = ["src/wetlands_ml_geoai"]
+   source = ["src/wetlands_ml_atwell"]
    branch = true
    ```
 
@@ -338,7 +338,7 @@ Model predicts on [0, 0.004] ✓
 1. **Define configuration dataclasses**
 
    ```python
-   # src/wetlands_ml_geoai/config/models.py
+   # src/wetlands_ml_atwell/config/models.py
    from dataclasses import dataclass, field
    from pathlib import Path
    from typing import Optional, Sequence
@@ -395,7 +395,7 @@ Model predicts on [0, 0.004] ✓
 2. **Create configuration builders from CLI/env**
 
    ```python
-   # src/wetlands_ml_geoai/config/cli.py
+   # src/wetlands_ml_atwell/config/cli.py
    def build_training_config(args: argparse.Namespace) -> TrainingConfig:
        """Build TrainingConfig from parsed CLI arguments."""
        return TrainingConfig(
@@ -430,7 +430,7 @@ Model predicts on [0, 0.004] ✓
 3. **Add YAML configuration support**
 
    ```python
-   # src/wetlands_ml_geoai/config/yaml_loader.py
+   # src/wetlands_ml_atwell/config/yaml_loader.py
    import yaml
    
    def load_training_config(path: Path) -> TrainingConfig:
@@ -445,7 +445,7 @@ Model predicts on [0, 0.004] ✓
 4. **Update CLIs to use shared config layer**
 
    ```python
-   # src/wetlands_ml_geoai/train_unet.py (refactored)
+   # src/wetlands_ml_atwell/train_unet.py (refactored)
    from .config import TrainingConfig, build_training_config, add_common_training_args
    
    def parse_args() -> TrainingConfig:
@@ -496,7 +496,7 @@ sentinel2/
 1. **Extract AOI parsing module**
 
    ```python
-   # src/wetlands_ml_geoai/sentinel2/aoi.py
+   # src/wetlands_ml_atwell/sentinel2/aoi.py
    """AOI parsing and geometry utilities."""
    
    from shapely.geometry.base import BaseGeometry
@@ -525,7 +525,7 @@ sentinel2/
 2. **Extract STAC client module**
 
    ```python
-   # src/wetlands_ml_geoai/sentinel2/stac_client.py
+   # src/wetlands_ml_atwell/sentinel2/stac_client.py
    """Sentinel-2 STAC API interactions."""
    
    from pystac_client import Client
@@ -578,7 +578,7 @@ sentinel2/
 3. **Extract cloud masking module**
 
    ```python
-   # src/wetlands_ml_geoai/sentinel2/cloud_masking.py
+   # src/wetlands_ml_atwell/sentinel2/cloud_masking.py
    """Cloud and shadow masking utilities."""
    
    import xarray as xr
@@ -605,7 +605,7 @@ sentinel2/
 4. **Extract seasonal compositing module**
 
    ```python
-   # src/wetlands_ml_geoai/sentinel2/seasonal.py
+   # src/wetlands_ml_atwell/sentinel2/seasonal.py
    """Seasonal composite generation."""
    
    import xarray as xr
@@ -642,7 +642,7 @@ sentinel2/
 5. **Create focused orchestrator**
 
    ```python
-   # src/wetlands_ml_geoai/sentinel2/pipeline.py
+   # src/wetlands_ml_atwell/sentinel2/pipeline.py
    """Sentinel-2 pipeline orchestration."""
    
    from .aoi import parse_aoi, extract_polygons
@@ -708,7 +708,7 @@ sentinel2/
 1. **Create abstract data service interface**
 
    ```python
-   # src/wetlands_ml_geoai/services/base.py
+   # src/wetlands_ml_atwell/services/base.py
    from abc import ABC, abstractmethod
    
    class DataService(ABC):
@@ -728,7 +728,7 @@ sentinel2/
 2. **Implement NAIP service**
 
    ```python
-   # src/wetlands_ml_geoai/services/naip.py
+   # src/wetlands_ml_atwell/services/naip.py
    from .base import DataService
    
    @dataclass
@@ -762,7 +762,7 @@ sentinel2/
 3. **Implement wetlands service**
 
    ```python
-   # src/wetlands_ml_geoai/services/wetlands.py
+   # src/wetlands_ml_atwell/services/wetlands.py
    class WetlandsService(DataService):
        """Service for downloading NWI wetlands data."""
        
@@ -776,7 +776,7 @@ sentinel2/
 4. **Implement topography service**
 
    ```python
-   # src/wetlands_ml_geoai/services/topography.py
+   # src/wetlands_ml_atwell/services/topography.py
    class TopographyService(DataService):
        """Service for downloading and processing DEMs."""
        
@@ -799,7 +799,7 @@ sentinel2/
    # tools/naip_download.py (refactored)
    """CLI for NAIP downloads - delegates to NaipService."""
    
-   from wetlands_ml_geoai.services.naip import NaipService, NaipDownloadRequest
+   from wetlands_ml_atwell.services.naip import NaipService, NaipDownloadRequest
    
    def main():
        args = parse_args()
@@ -831,7 +831,7 @@ sentinel2/
 1. **Create training service layer**
 
    ```python
-   # src/wetlands_ml_geoai/training/service.py
+   # src/wetlands_ml_atwell/training/service.py
    from ..config import TrainingConfig
    
    class TrainingService:
@@ -863,7 +863,7 @@ sentinel2/
 2. **Create geoai adapter for testability**
 
    ```python
-   # src/wetlands_ml_geoai/adapters/geoai.py
+   # src/wetlands_ml_atwell/adapters/geoai.py
    from abc import ABC, abstractmethod
    
    class GeoaiAdapter(ABC):
@@ -903,7 +903,7 @@ sentinel2/
 3. **Unify tile export logic**
 
    ```python
-   # src/wetlands_ml_geoai/training/tile_exporter.py
+   # src/wetlands_ml_atwell/training/tile_exporter.py
    class TileExporter:
        """Handles tile extraction and manifest rewriting."""
        
@@ -942,7 +942,7 @@ sentinel2/
 4. **Create inference service layer**
 
    ```python
-   # src/wetlands_ml_geoai/inference/service.py
+   # src/wetlands_ml_atwell/inference/service.py
    class InferenceService:
        """Orchestrates model inference workflow."""
        
@@ -1133,7 +1133,7 @@ Week 14:    Final review and cleanup
 ### New Files to Create
 
 ```
-src/wetlands_ml_geoai/
+src/wetlands_ml_atwell/
 ├── config/
 │   ├── __init__.py
 │   ├── models.py           # Config dataclasses
@@ -1207,7 +1207,7 @@ inference/unet_stream.py:_stream_inference - B (10)
 ### Lines of Code by Module
 
 ```
-cloc src/wetlands_ml_geoai/
+cloc src/wetlands_ml_atwell/
 
 sentinel2/compositing.py    995
 train_unet.py               427
@@ -1222,7 +1222,7 @@ data_acquisition.py         253
 ### Import Dependency Analysis
 
 ```
-pydeps src/wetlands_ml_geoai --cluster
+pydeps src/wetlands_ml_atwell --cluster
 
 Clusters:
   - sentinel2 (self-contained)

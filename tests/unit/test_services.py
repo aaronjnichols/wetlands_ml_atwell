@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from shapely.geometry import box
 
-from wetlands_ml_geoai.services.download import (
+from wetlands_ml_atwell.services.download import (
     NaipDownloadRequest,
     NaipService,
     WetlandsDownloadRequest,
@@ -40,7 +40,7 @@ class TestNaipService:
             overwrite=True,
         )
 
-        with patch("wetlands_ml_geoai.services.download.geo_download") as mock_geo:
+        with patch("wetlands_ml_atwell.services.download.geo_download") as mock_geo:
             mock_geo.download_naip.return_value = ["tile1.tif", "tile2.tif"]
             
             results = service.download(request)
@@ -57,7 +57,7 @@ class TestNaipService:
         request = NaipDownloadRequest(aoi=aoi, output_dir=tmp_path, year=2022)
 
         # Simulate geoai module missing attribute
-        with patch("wetlands_ml_geoai.services.download.geo_download", spec=[]) as mock_geo:
+        with patch("wetlands_ml_atwell.services.download.geo_download", spec=[]) as mock_geo:
             with pytest.raises(AttributeError, match="geoai.download.download_naip is not available"):
                 service.download(request)
 
@@ -77,7 +77,7 @@ class TestWetlandsService:
             overwrite=False
         )
         
-        with patch("wetlands_ml_geoai.services.download.requests") as mock_requests:
+        with patch("wetlands_ml_atwell.services.download.requests") as mock_requests:
             result = service.download(request)
             
             assert result == output_path
@@ -102,12 +102,12 @@ class TestWetlandsService:
             ]
         }
 
-        with patch("wetlands_ml_geoai.services.download.requests") as mock_req:
+        with patch("wetlands_ml_atwell.services.download.requests") as mock_req:
             mock_req.get.return_value.json.return_value = fake_geojson
             mock_req.get.return_value.status_code = 200
-            
+
             # Mock geopandas to avoid writing actual file and complex clipping logic in unit test
-            with patch("wetlands_ml_geoai.services.download.gpd") as mock_gpd:
+            with patch("wetlands_ml_atwell.services.download.gpd") as mock_gpd:
                 mock_df = MagicMock()
                 mock_gpd.GeoDataFrame.from_features.return_value = mock_df
                 mock_gpd.clip.return_value = mock_df
@@ -129,8 +129,8 @@ class TestTopographyService:
         aoi = box(0, 0, 1, 1)
         
         # Mock the helper functions within the module
-        with patch("wetlands_ml_geoai.services.download.fetch_dem_inventory") as mock_fetch, \
-             patch("wetlands_ml_geoai.services.download.download_dem_products") as mock_down:
+        with patch("wetlands_ml_atwell.services.download.fetch_dem_inventory") as mock_fetch, \
+             patch("wetlands_ml_atwell.services.download.download_dem_products") as mock_down:
             
             mock_fetch.return_value = [
                 DemProduct("id1", "url1", 100, [0,0,1,1], "2022")
@@ -146,7 +146,7 @@ class TestTopographyService:
     def test_download_returns_empty_if_no_products(self, service, tmp_path):
         aoi = box(0, 0, 1, 1)
         
-        with patch("wetlands_ml_geoai.services.download.fetch_dem_inventory") as mock_fetch:
+        with patch("wetlands_ml_atwell.services.download.fetch_dem_inventory") as mock_fetch:
             mock_fetch.return_value = []
             results = service.download(aoi, tmp_path)
             assert results == []

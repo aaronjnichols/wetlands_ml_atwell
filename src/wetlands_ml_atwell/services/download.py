@@ -1,4 +1,4 @@
-"""Data acquisition services for wetlands_ml_geoai.
+"""Data acquisition services for wetlands_ml_atwell.
 
 This module unifies access to external data sources (NAIP, NWI Wetlands, USGS 3DEP).
 """
@@ -261,7 +261,7 @@ def fetch_dem_inventory(
         "Accept": "application/json",
         "User-Agent": os.getenv(
             "USGS_USER_AGENT",
-            "wetlands-ml-geoai/0.1 (https://github.com/atwellconsulting/wetlands_ml_codex)",
+            "wetlands-ml-atwell/0.1 (https://github.com/aaronjnichols/wetlands_ml_atwell)",
         ),
     }
     api_key = os.getenv("USGS_API_KEY")

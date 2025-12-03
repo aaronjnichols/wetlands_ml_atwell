@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import rasterio
-from wetlands_ml_geoai.inference.unet_stream import infer_raster
+from wetlands_ml_atwell.inference.unet_stream import infer_raster
 from pathlib import Path
 
 # Settings

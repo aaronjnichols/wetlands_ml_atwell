@@ -1,10 +1,10 @@
-﻿# Wetlands ML GeoAI
+﻿# Wetlands ML Atwell
 
 Core pipelines for generating Sentinel-2 seasonal composites, stacking with NAIP imagery, training UNet semantic segmentation models, and running inference.
 
 ## Project Layout
 
-- `src/wetlands_ml_geoai/` - Reusable Python package.
+- `src/wetlands_ml_atwell/` - Reusable Python package.
     - `config/` - Centralized configuration schemas and CLI parsing.
     - `services/` - Unified data acquisition services (NAIP, Wetlands, Topography).
     - `sentinel2/` - Sentinel-2 seasonal compositing and stack generation.
@@ -64,8 +64,8 @@ python test_unet.py \
 
 This project follows a service-oriented architecture:
 
-*   **Configuration**: All workflows use typed configuration objects (`TrainingConfig`, `InferenceConfig`) defined in `src/wetlands_ml_geoai/config/`.
-*   **Services**: External data interactions are handled by `NaipService`, `WetlandsService`, and `TopographyService` in `src/wetlands_ml_geoai/services/`.
+*   **Configuration**: All workflows use typed configuration objects (`TrainingConfig`, `InferenceConfig`) defined in `src/wetlands_ml_atwell/config/`.
+*   **Services**: External data interactions are handled by `NaipService`, `WetlandsService`, and `TopographyService` in `src/wetlands_ml_atwell/services/`.
 *   **Normalization**: Data is normalized consistently to `[0, 1]` (float32) or `[0, 255]` (uint8) across training and inference to ensure model stability.
 
 See `docs/architecture/refactoring/` for detailed design notes.

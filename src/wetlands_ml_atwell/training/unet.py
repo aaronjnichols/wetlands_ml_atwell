@@ -1,4 +1,4 @@
-"""UNet training orchestration for wetlands_ml_geoai."""
+"""UNet training orchestration for wetlands_ml_atwell."""
 
 from __future__ import annotations
 

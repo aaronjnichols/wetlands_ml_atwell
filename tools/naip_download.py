@@ -7,7 +7,7 @@ project_root = Path(__file__).parents[1]
 if str(project_root / "src") not in sys.path:
     sys.path.insert(0, str(project_root / "src"))
 
-from wetlands_ml_geoai.services.download import NaipService, NaipDownloadRequest
+from wetlands_ml_atwell.services.download import NaipService, NaipDownloadRequest
 
 
 def main():
