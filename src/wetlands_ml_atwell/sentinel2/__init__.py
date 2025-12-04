@@ -48,7 +48,7 @@ __all__ = [
     # CLI
     "build_parser",
     "main",
-    "generate_sentinel_composites",
+    # Manifest
     "write_stack_manifest",
 ]
 

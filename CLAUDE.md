@@ -10,8 +10,13 @@ Wetlands ML Atwell is a Python package for wetland semantic segmentation using s
 
 ### Environment Setup
 ```bash
-# Windows: creates venv and installs dependencies
+# Windows: creates venv312 and installs package in editable mode
 setup.bat
+
+# Or manually:
+python -m venv venv312
+venv312\Scripts\activate
+pip install -e ".[all]"
 ```
 
 ### Running the Main Workflows

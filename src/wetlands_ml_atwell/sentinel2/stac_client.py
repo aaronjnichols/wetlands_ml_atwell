@@ -26,6 +26,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import stackstac
 import xarray as xr
 from pystac import Item
+from pystac.extensions.projection import ProjectionExtension
 from pystac_client import Client
 from shapely.geometry import mapping
 from shapely.geometry.base import BaseGeometry
@@ -192,9 +193,17 @@ def stack_bands(
     """
     if not items:
         raise ValueError("No Sentinel-2 items available for stacking.")
-    epsg = items[0].properties.get("proj:epsg")
+
+    # Get EPSG via projection extension (handles both legacy and new STAC formats)
+    try:
+        proj_ext = ProjectionExtension.ext(items[0])
+        epsg = proj_ext.epsg
+    except Exception:
+        # Fallback to legacy property access
+        epsg = items[0].properties.get("proj:epsg")
+
     if epsg is None:
-        raise ValueError("Sentinel-2 item missing proj:epsg metadata.")
+        raise ValueError("Sentinel-2 item missing projection metadata (proj:epsg).")
     
     asset_ids = []
     for band in SENTINEL_BANDS:

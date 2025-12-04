@@ -1,0 +1,146 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wetlands-ml-atwell"
+version = "0.1.0"
+description = "Wetland semantic segmentation using satellite imagery with Sentinel-2 compositing, NAIP integration, and UNet training/inference pipelines"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Atwell Wetlands ML Team"}
+]
+keywords = ["wetlands", "segmentation", "satellite", "sentinel-2", "naip", "unet", "geoai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+
+dependencies = [
+    "geoai-py>=0.11.0",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "rasterio>=1.3.0",
+    "rioxarray>=0.14.0",
+    "geopandas>=0.14.0",
+    "shapely>=2.0.0",
+    "pyproj>=3.6.0",
+    "fiona>=1.9.0",
+    "xarray>=2023.1.0",
+    "dask>=2023.1.0",
+    "pystac>=1.8.0",
+    "pystac-client>=0.7.0",
+    "stackstac>=0.5.0",
+    "scikit-image>=0.21.0",
+    "albumentations>=1.3.0",
+    "opencv-python-headless>=4.8.0",
+    "requests>=2.31.0",
+    "tqdm>=4.65.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "scikit-learn>=1.3.0",
+    "matplotlib>=3.7.0",
+    "plotly>=5.15.0",
+]
+viz = [
+    "leafmap>=0.30.0",
+    "folium>=0.14.0",
+    "matplotlib>=3.7.0",
+    "plotly>=5.15.0",
+    "ipyleaflet>=0.18.0",
+]
+notebook = [
+    "jupyter>=1.0.0",
+    "ipywidgets>=8.0.0",
+    "ipyleaflet>=0.18.0",
+]
+all = [
+    "wetlands-ml-atwell[dev,viz,notebook]",
+]
+
+[project.scripts]
+wetlands-train = "wetlands_ml_atwell.train_unet:main"
+wetlands-infer = "wetlands_ml_atwell.test_unet:main"
+wetlands-sentinel2 = "wetlands_ml_atwell.sentinel2.cli:main"
+
+[project.urls]
+Repository = "https://github.com/your-org/wetlands-ml-atwell"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+wetlands_ml_atwell = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests (require fixtures, may be slower)",
+]
+addopts = "-ra -v"
+norecursedirs = ["venv", "venv312", "data", ".git", "__pycache__", "*.egg-info"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | venv
+  | venv312
+  | build
+  | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "venv312",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = [
+    "venv",
+    "venv312",
+    "build",
+    "dist",
+]

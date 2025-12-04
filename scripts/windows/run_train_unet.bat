@@ -7,11 +7,11 @@ cd /d "%~dp0..\.."
 REM ------------------------------------------------------------------
 REM Training Configuration
 REM ------------------------------------------------------------------
-set "STACK_MANIFEST=data\20251201_MI_NWI_Small_Test\train\s2_refactor_test\aoi_01\stack_manifest.json"
+set "STACK_MANIFEST=data\20251201_MI_NWI_Small_Test\train\s2_tmp\aoi_01\stack_manifest.json"
 set "TRAIN_RASTER="
 set "LABELS=data\mi_nwi_wetlands.gpkg"
-set "TILES_DIR=data\20251201_MI_NWI_Small_Test\train\tiles_refactor_test"
-set "MODELS_DIR=data\20251201_MI_NWI_Small_Test\train\models_refactor_test"
+set "TILES_DIR=data\20251201_MI_NWI_Small_Test\train\s2_tmp\tiles_tmp_test"
+set "MODELS_DIR=data\20251201_MI_NWI_Small_Test\train\s2_tmp\models_tmp_test"
 
 REM Tiling
 set "TILE_SIZE=512"

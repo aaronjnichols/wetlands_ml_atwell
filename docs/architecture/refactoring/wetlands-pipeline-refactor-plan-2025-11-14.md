@@ -83,7 +83,7 @@ While `data_acquisition.py` already exposes `_download_naip_tiles`, the checked-
 5:32:tools/naip_download.py
 # user inputs
 output_dir = r"data\IL\naip_tiles"
-aoi_gpkg = r"C:\_code\python\wetlands_ml_atwell\data\IL\test_aoi.gpkg"
+aoi_gpkg = r"C:\_code\python\wetlands-ml-atwell\data\IL\test_aoi.gpkg"
 ...
 naip_paths = download_naip(
     aoi_bbox,

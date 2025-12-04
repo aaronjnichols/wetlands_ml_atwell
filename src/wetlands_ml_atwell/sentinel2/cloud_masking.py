@@ -34,6 +34,7 @@ import numpy as np
 import stackstac
 import xarray as xr
 from pystac import Item
+from pystac.extensions.projection import ProjectionExtension
 from skimage.morphology import binary_dilation
 
 LOGGER = logging.getLogger(__name__)
@@ -67,9 +68,16 @@ def stack_scl(
     Raises:
         ValueError: If items are missing proj:epsg or SCL asset.
     """
-    epsg = items[0].properties.get("proj:epsg")
+    # Get EPSG via projection extension (handles both legacy and new STAC formats)
+    try:
+        proj_ext = ProjectionExtension.ext(items[0])
+        epsg = proj_ext.epsg
+    except Exception:
+        # Fallback to legacy property access
+        epsg = items[0].properties.get("proj:epsg")
+
     if epsg is None:
-        raise ValueError("Sentinel-2 item missing proj:epsg metadata.")
+        raise ValueError("Sentinel-2 item missing projection metadata (proj:epsg).")
     if SCL_ASSET_ID not in items[0].assets:
         raise ValueError(f"Sentinel-2 item missing {SCL_ASSET_ID} asset.")
     
