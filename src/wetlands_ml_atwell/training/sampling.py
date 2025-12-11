@@ -230,14 +230,13 @@ def generate_training_manifest(
     # Compute Safe Zone
     safe_gdf = _compute_safe_zone(aoi_gdf, atwell_gdf, nwi_gdf, buffer_dist)
     
-    # Find tiles whose CENTROIDS are in the Safe Zone
-    # This is a fast proxy for "mostly safe"
-    # For strict safety, check 'within', but that discards edge tiles.
-    candidates_centroids = candidate_negatives.copy()
-    candidates_centroids['geometry'] = candidates_centroids.centroid
-    
-    center_safe = gpd.sjoin(candidates_centroids, safe_gdf, how="inner", predicate="intersects")
-    valid_negatives = candidate_negatives.loc[center_safe.index]
+    # Find tiles that are ENTIRELY within the Safe Zone
+    # This ensures no NWI wetland pixels can leak into negative tiles
+    # (Previously used centroid test which allowed edge overlap)
+    valid_negatives_joined = gpd.sjoin(
+        candidate_negatives, safe_gdf, how="inner", predicate="within"
+    )
+    valid_negatives = candidate_negatives.loc[valid_negatives_joined.index]
     valid_negatives = valid_negatives[~valid_negatives.index.duplicated()].copy()
     valid_negatives["class_label"] = 0  # Negative
     

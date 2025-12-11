@@ -26,6 +26,7 @@ from .models import (
     DEFAULT_WINDOW_SIZE,
     InferenceConfig,
     ModelConfig,
+    SamplingConfig,
     TilingConfig,
     TrainingConfig,
     TrainingHyperparameters,
@@ -182,6 +183,38 @@ def add_common_training_args(parser: argparse.ArgumentParser) -> None:
         default=int(os.getenv("UNET_SEED", DEFAULT_SEED)),
         help="Random seed for reproducibility.",
     )
+    # Balanced sampling arguments
+    parser.add_argument(
+        "--balanced-sampling",
+        dest="balanced_sampling",
+        action="store_true",
+        help="Enable NWI-filtered balanced sampling to avoid false negatives.",
+    )
+    parser.add_argument(
+        "--no-balanced-sampling",
+        dest="balanced_sampling",
+        action="store_false",
+        help="Disable balanced sampling (default).",
+    )
+    parser.set_defaults(balanced_sampling=strtobool(os.getenv("BALANCED_SAMPLING", "false")))
+    parser.add_argument(
+        "--nwi-path",
+        type=Path,
+        default=os.getenv("NWI_PATH"),
+        help="Path to NWI wetlands for safe zone calculation (required with --balanced-sampling).",
+    )
+    parser.add_argument(
+        "--positive-negative-ratio",
+        type=float,
+        default=float(os.getenv("POSITIVE_NEGATIVE_RATIO", "1.0")),
+        help="Ratio of negative to positive tiles for balanced sampling (default: 1.0).",
+    )
+    parser.add_argument(
+        "--safe-zone-buffer",
+        type=float,
+        default=float(os.getenv("SAFE_ZONE_BUFFER", "100.0")),
+        help="Buffer distance around positive labels in meters for safe zone (default: 100.0).",
+    )
     parser.add_argument(
         "--target-size",
         default=os.getenv("UNET_TARGET_SIZE"),
@@ -292,7 +325,14 @@ def build_training_config(args: argparse.Namespace) -> TrainingConfig:
         config.hyperparameters.weight_decay = args.weight_decay
         config.hyperparameters.val_split = args.val_split
         config.hyperparameters.seed = args.seed
-        
+
+        # Sampling config
+        config.sampling.enabled = args.balanced_sampling
+        if args.nwi_path:
+            config.sampling.nwi_path = Path(args.nwi_path).expanduser().resolve()
+        config.sampling.positive_negative_ratio = args.positive_negative_ratio
+        config.sampling.safe_zone_buffer = args.safe_zone_buffer
+
         # Other settings
         if args.target_size:
             config.target_size = parse_target_size(args.target_size)
@@ -344,6 +384,12 @@ def build_training_config(args: argparse.Namespace) -> TrainingConfig:
             weight_decay=args.weight_decay,
             val_split=args.val_split,
             seed=args.seed,
+        ),
+        sampling=SamplingConfig(
+            enabled=args.balanced_sampling,
+            nwi_path=Path(args.nwi_path).expanduser().resolve() if args.nwi_path else None,
+            positive_negative_ratio=args.positive_negative_ratio,
+            safe_zone_buffer=args.safe_zone_buffer,
         ),
         target_size=parse_target_size(args.target_size),
         resize_mode=args.resize_mode,

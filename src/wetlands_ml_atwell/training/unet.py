@@ -19,7 +19,7 @@ import json
 
 from ..stacking import RasterStack, StackManifest, load_manifest, rewrite_tile_images
 from ..tiling import analyze_label_tiles, derive_num_channels
-from ..config import TrainingConfig
+from ..config import TrainingConfig, SamplingConfig
 
 
 def _prepare_labels(
@@ -98,6 +98,185 @@ def _load_manifests(paths: Optional[Sequence[Path | str]]) -> Sequence[StackMani
     for path in paths:
         manifests.append(load_manifest(path))
     return manifests
+
+
+def _get_tile_extents(images_dir: Path) -> gpd.GeoDataFrame:
+    """Build a GeoDataFrame of tile bounding boxes from image files.
+
+    Args:
+        images_dir: Directory containing tile GeoTIFF files.
+
+    Returns:
+        GeoDataFrame with tile geometries and filenames.
+    """
+    from shapely.geometry import box
+
+    tile_files = sorted(images_dir.glob("*.tif"))
+    records = []
+
+    for tile_path in tile_files:
+        with rasterio.open(tile_path) as src:
+            bounds = src.bounds
+            crs = src.crs
+            geom = box(bounds.left, bounds.bottom, bounds.right, bounds.top)
+            records.append({
+                "filename": tile_path.name,
+                "geometry": geom,
+            })
+
+    if not records:
+        return gpd.GeoDataFrame(columns=["filename", "geometry"])
+
+    # Use CRS from last tile (all should be same)
+    return gpd.GeoDataFrame(records, crs=crs)
+
+
+def _apply_balanced_sampling(
+    images_dir: Path,
+    labels_dir: Path,
+    labels_path: Path,
+    nwi_path: Path,
+    positive_negative_ratio: float = 1.0,
+    safe_zone_buffer: float = 100.0,
+    seed: int = 42,
+) -> Tuple[int, int, int]:
+    """Apply NWI-filtered balanced sampling to generated tiles.
+
+    After geoai generates all tiles, this function filters them to keep:
+    - All positive tiles (intersecting with training labels)
+    - Sampled negative tiles from the "safe zone" (away from labels and NWI)
+
+    Args:
+        images_dir: Directory containing generated image tiles.
+        labels_dir: Directory containing generated label tiles.
+        labels_path: Path to training labels (positive polygons).
+        nwi_path: Path to NWI wetlands for exclusion.
+        positive_negative_ratio: Ratio of negative to positive tiles.
+        safe_zone_buffer: Buffer around positive labels in meters.
+        seed: Random seed for sampling.
+
+    Returns:
+        Tuple of (num_positive, num_negative, num_removed).
+    """
+    from shapely.ops import unary_union
+    import numpy as np
+
+    logging.info("Applying balanced sampling with NWI exclusion...")
+
+    # Get tile extents
+    tiles_gdf = _get_tile_extents(images_dir)
+    if tiles_gdf.empty:
+        logging.warning("No tiles found for balanced sampling")
+        return 0, 0, 0
+
+    original_crs = tiles_gdf.crs
+    total_tiles = len(tiles_gdf)
+
+    # Use projected CRS for spatial operations
+    target_crs = "EPSG:5070"  # NAD83 Conus Albers
+    tiles_proj = tiles_gdf.to_crs(target_crs)
+
+    # Load labels (training positives)
+    labels_gdf = gpd.read_file(labels_path)
+    if labels_gdf.crs is None:
+        labels_gdf.set_crs("EPSG:4326", inplace=True)
+    labels_proj = labels_gdf.to_crs(target_crs)
+
+    # Load NWI
+    nwi_gdf = gpd.read_file(nwi_path)
+    if nwi_gdf.crs is None:
+        nwi_gdf.set_crs("EPSG:4326", inplace=True)
+    nwi_proj = nwi_gdf.to_crs(target_crs)
+
+    # Identify positive tiles (intersecting with labels)
+    positive_join = gpd.sjoin(tiles_proj, labels_proj, how="inner", predicate="intersects")
+    positive_indices = set(positive_join.index.unique())
+
+    num_positive = len(positive_indices)
+    logging.info(f"Found {num_positive} positive tiles (intersecting labels)")
+
+    if num_positive == 0:
+        logging.warning("No positive tiles found! Keeping all tiles.")
+        return 0, total_tiles, 0
+
+    # Identify candidate negative tiles
+    candidate_negative_indices = set(tiles_proj.index) - positive_indices
+    candidate_negatives = tiles_proj.loc[list(candidate_negative_indices)]
+
+    # Compute safe zone: exclude areas near labels and NWI
+    # Buffer the labels
+    labels_buffered = labels_proj.geometry.buffer(safe_zone_buffer)
+    if hasattr(labels_buffered, "union_all"):
+        labels_exclusion = labels_buffered.union_all()
+    else:
+        labels_exclusion = unary_union(labels_buffered)
+
+    # Union NWI geometries
+    nwi_clean = nwi_proj.geometry.buffer(0)  # Fix invalid geometries
+    if hasattr(nwi_clean, "union_all"):
+        nwi_exclusion = nwi_clean.union_all()
+    else:
+        nwi_exclusion = unary_union(nwi_clean)
+
+    # Combined exclusion zone
+    exclusion_zone = labels_exclusion.union(nwi_exclusion)
+
+    # Create safe zone GeoDataFrame for spatial join
+    safe_zone_geom = tiles_proj.unary_union.difference(exclusion_zone)
+    safe_zone_gdf = gpd.GeoDataFrame(
+        {"geometry": [safe_zone_geom]}, crs=target_crs
+    ).explode(index_parts=True).reset_index(drop=True)
+
+    # Filter to tiles entirely within safe zone
+    if not candidate_negatives.empty and not safe_zone_gdf.empty:
+        safe_join = gpd.sjoin(
+            candidate_negatives, safe_zone_gdf, how="inner", predicate="within"
+        )
+        safe_negative_indices = set(safe_join.index.unique())
+    else:
+        safe_negative_indices = set()
+
+    num_safe_negatives = len(safe_negative_indices)
+    logging.info(f"Found {num_safe_negatives} safe negative tiles (within safe zone)")
+
+    # Sample negatives based on ratio
+    target_negatives = int(num_positive * positive_negative_ratio)
+
+    if num_safe_negatives > target_negatives:
+        np.random.seed(seed)
+        sampled_indices = np.random.choice(
+            list(safe_negative_indices), size=target_negatives, replace=False
+        )
+        selected_negative_indices = set(sampled_indices)
+        logging.info(f"Sampled {target_negatives} negatives from {num_safe_negatives} safe candidates")
+    else:
+        selected_negative_indices = safe_negative_indices
+        logging.info(f"Using all {num_safe_negatives} safe negative tiles (fewer than target {target_negatives})")
+
+    # Determine tiles to keep
+    keep_indices = positive_indices | selected_negative_indices
+    remove_indices = set(tiles_proj.index) - keep_indices
+
+    # Delete non-selected tiles
+    num_removed = 0
+    for idx in remove_indices:
+        filename = tiles_gdf.loc[idx, "filename"]
+        image_path = images_dir / filename
+        label_path = labels_dir / filename
+
+        if image_path.exists():
+            image_path.unlink()
+            num_removed += 1
+        if label_path.exists():
+            label_path.unlink()
+
+    num_negative = len(selected_negative_indices)
+    logging.info(
+        f"Balanced sampling complete: {num_positive} positive, {num_negative} negative, "
+        f"{num_removed} removed"
+    )
+
+    return num_positive, num_negative, num_removed
 
 
 # =============================================================================
@@ -227,6 +406,11 @@ def train_unet(
     num_workers: Optional[int] = None,
     checkpoint_path: Optional[Path] = None,
     resume_training: bool = False,
+    # Balanced sampling parameters
+    balanced_sampling: bool = False,
+    nwi_path: Optional[Path] = None,
+    positive_negative_ratio: float = 1.0,
+    safe_zone_buffer: float = 100.0,
 ) -> None:
     manifests = _load_manifests(stack_manifest_path)
 
@@ -395,6 +579,30 @@ def train_unet(
         labels_dir,
     )
 
+    # Apply balanced sampling if enabled
+    if balanced_sampling:
+        if nwi_path is None:
+            raise ValueError("nwi_path is required when balanced_sampling is enabled")
+        if not nwi_path.exists():
+            raise FileNotFoundError(f"NWI file not found: {nwi_path}")
+
+        num_positive, num_negative, num_removed = _apply_balanced_sampling(
+            images_dir=images_dir,
+            labels_dir=labels_dir,
+            labels_path=labels_path,
+            nwi_path=nwi_path,
+            positive_negative_ratio=positive_negative_ratio,
+            safe_zone_buffer=safe_zone_buffer,
+            seed=seed,
+        )
+        total_tiles = num_positive + num_negative
+        logging.info(
+            "After balanced sampling: %s total tiles (%s positive, %s negative)",
+            total_tiles,
+            num_positive,
+            num_negative,
+        )
+
     if primary_manifest is not None and num_channels_override is None:
         with RasterStack(primary_manifest) as stack:
             num_channels = stack.band_count
@@ -515,6 +723,11 @@ def train_unet_from_config(config: TrainingConfig) -> None:
         num_workers=config.num_workers,
         checkpoint_path=config.checkpoint_path,
         resume_training=config.resume_training,
+        # Balanced sampling parameters
+        balanced_sampling=config.sampling.enabled,
+        nwi_path=config.sampling.nwi_path,
+        positive_negative_ratio=config.sampling.positive_negative_ratio,
+        safe_zone_buffer=config.sampling.safe_zone_buffer,
     )
 
 

@@ -85,15 +85,17 @@ def prepare_topography_stack(config: TopographyStackConfig) -> Path:
             )
 
         buffered_geom = _buffer_geometry(config.aoi, config.buffer_meters)
-        
+
         cache_dir = config.cache_dir or config.output_dir / "raw"
         LOGGER.info("Fetching DEMs for buffered AOI (buffer=%sm) -> %s", config.buffer_meters, cache_dir)
-        
+        LOGGER.info("DEM resolution from config: %r", config.dem_resolution)
+
         # Use the new TopographyService
         service = TopographyService()
         dem_paths = service.download(
             aoi_geometry=buffered_geom,
             output_dir=cache_dir,
+            resolution=config.dem_resolution,
         )
         
         if not dem_paths:

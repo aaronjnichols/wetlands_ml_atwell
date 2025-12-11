@@ -200,10 +200,29 @@ DEFAULT_DATASETS: Sequence[str] = (
     "3DEP Elevation: DEM (1 meter)",
     "Seamless 1-meter DEM (Limited Availability)",
     "DEM Source (OPR)",
-    "1/9 arc-second DEM",
-    "1/3 arc-second DEM",
-    "1 arc-second DEM",
+    "National Elevation Dataset (NED) 1/9 arc-second",
+    "National Elevation Dataset (NED) 1/3 arc-second",
+    "National Elevation Dataset (NED) 1 arc-second",
 )
+
+# Dataset priorities by resolution preference
+DATASETS_10M: Sequence[str] = (
+    "National Elevation Dataset (NED) 1/3 arc-second",
+    "National Elevation Dataset (NED) 1/9 arc-second",
+    "National Elevation Dataset (NED) 1 arc-second",
+)
+
+DATASETS_30M: Sequence[str] = (
+    "National Elevation Dataset (NED) 1 arc-second",
+    "National Elevation Dataset (NED) 1/3 arc-second",
+    "National Elevation Dataset (NED) 1/9 arc-second",
+)
+
+DEM_RESOLUTION_DATASETS = {
+    "1m": DEFAULT_DATASETS,
+    "10m": DATASETS_10M,
+    "30m": DATASETS_30M,
+}
 
 
 def _build_query_params(
@@ -314,7 +333,7 @@ def fetch_dem_inventory(
                 DemProduct(
                     product_id=str(product_id),
                     download_url=primary_url,
-                    size=int(item.get("sizeInBytes", item.get("unitSize", 0))),
+                    size=int(item.get("sizeInBytes") or item.get("unitSize") or 0),
                     bbox=item.get("boundingBox", []),
                     last_updated=item.get("lastUpdated"),
                 )
@@ -400,37 +419,55 @@ class TopographyService:
         aoi_geometry: BaseGeometry,
         output_dir: Path,
         datasets: Optional[Sequence[str]] = None,
+        resolution: Optional[str] = None,
     ) -> List[Path]:
         """Download DEM tiles covering the AOI.
-        
+
         Args:
             aoi_geometry: Shapely geometry defining the area of interest.
             output_dir: Directory to save downloaded tiles.
             datasets: Optional list of dataset names to query (priority order).
-            
+            resolution: DEM resolution preference ('1m', '10m', '30m').
+                If provided, overrides datasets parameter.
+
         Returns:
             List of paths to downloaded DEM tiles.
         """
         bbox = aoi_geometry.bounds
-        
+
+        LOGGER.info("TopographyService.download called with resolution=%r", resolution)
+
+        # Resolution takes precedence over explicit datasets
+        if resolution:
+            if resolution not in DEM_RESOLUTION_DATASETS:
+                raise ValueError(
+                    f"Invalid DEM resolution '{resolution}'. "
+                    f"Choose from: {list(DEM_RESOLUTION_DATASETS.keys())}"
+                )
+            datasets = DEM_RESOLUTION_DATASETS[resolution]
+            LOGGER.info("Using %s DEM resolution (datasets: %s)", resolution, datasets[0])
+        else:
+            LOGGER.info("No resolution specified, using DEFAULT_DATASETS (1m priority)")
+
         products = fetch_dem_inventory(
             aoi_geojson=aoi_geometry.__geo_interface__ if hasattr(aoi_geometry, "__geo_interface__") else {},
             bbox=bbox,
             datasets=datasets if datasets else DEFAULT_DATASETS,
         )
-        
+
         if not products:
             LOGGER.warning("No DEM products found for AOI")
             return []
-            
+
         return download_dem_products(products, output_dir)
 
 
 __all__ = [
-    "NaipService", 
-    "WetlandsService", 
+    "NaipService",
+    "WetlandsService",
     "TopographyService",
-    "NaipDownloadRequest", 
+    "NaipDownloadRequest",
     "WetlandsDownloadRequest",
     "DemProduct",
+    "DEM_RESOLUTION_DATASETS",
 ]

@@ -250,46 +250,175 @@ def plot_results(
     plt.savefig(output_path, dpi=150)
     plt.close()
 
+def simulate_balanced_sampling_within(
+    safe_gdf: gpd.GeoDataFrame,
+    atwell_gdf: gpd.GeoDataFrame,
+    aoi_gdf: gpd.GeoDataFrame,
+    tile_size_m: float = 512.0
+):
+    """
+    Simulates the tile selection using WITHIN test (Option 2).
+    Returns positive tiles, selected negative tiles, AND rejected tiles for comparison.
+    """
+    LOGGER.info("Simulating balanced tile sampling with WITHIN test...")
+
+    # 1. Generate Grid over AOI
+    minx, miny, maxx, maxy = aoi_gdf.total_bounds
+    cols = np.arange(minx, maxx, tile_size_m)
+    rows = np.arange(miny, maxy, tile_size_m)
+
+    polygons = []
+    for x in cols:
+        for y in rows:
+            polygons.append(box(x, y, x + tile_size_m, y + tile_size_m))
+
+    grid_gdf = gpd.GeoDataFrame({"geometry": polygons}, crs=aoi_gdf.crs)
+    LOGGER.info(f"Generated {len(grid_gdf)} potential tiles.")
+
+    # 2. Identify Positive Tiles (any tile touching Atwell)
+    positive_tiles = gpd.sjoin(grid_gdf, atwell_gdf, how="inner", predicate="intersects")
+    positive_tiles = positive_tiles[~positive_tiles.index.duplicated()].copy()
+
+    num_positives = len(positive_tiles)
+    LOGGER.info(f"Found {num_positives} Positive Tiles (containing verified wetland).")
+
+    # 3. Identify Candidate Negative Tiles (not positive)
+    candidate_negatives = grid_gdf.drop(positive_tiles.index)
+
+    # 4. WITHIN TEST: Tiles must be ENTIRELY inside safe zone
+    LOGGER.info("Identifying valid negative tiles using WITHIN test...")
+    valid_negatives_joined = gpd.sjoin(
+        candidate_negatives, safe_gdf, how="inner", predicate="within"
+    )
+    valid_negatives = candidate_negatives.loc[valid_negatives_joined.index]
+    valid_negatives = valid_negatives[~valid_negatives.index.duplicated()].copy()
+
+    LOGGER.info(f"Found {len(valid_negatives)} valid negative tiles (entirely within safe zone).")
+
+    # 5. Identify REJECTED tiles (for visualization comparison)
+    # These are tiles that would have passed centroid test but fail within test
+    rejected_indices = candidate_negatives.index.difference(valid_negatives.index)
+    rejected_tiles = candidate_negatives.loc[rejected_indices].copy()
+
+    # Further filter rejected to those whose centroid IS in safe zone (edge tiles)
+    rejected_centroids = rejected_tiles.copy()
+    rejected_centroids['geometry'] = rejected_tiles.centroid
+    centroid_in_safe = gpd.sjoin(rejected_centroids, safe_gdf, how="inner", predicate="intersects")
+    edge_rejected = rejected_tiles.loc[
+        rejected_tiles.index.intersection(centroid_in_safe.index)
+    ].copy()
+
+    LOGGER.info(f"Found {len(edge_rejected)} edge tiles (centroid safe, but tile extends outside).")
+
+    # 6. Sample Negatives (Balance 1:1)
+    if len(valid_negatives) > num_positives:
+        LOGGER.info(f"Downsampling negatives to match positives ({num_positives})...")
+        selected_negatives = valid_negatives.sample(n=num_positives, random_state=42)
+    else:
+        LOGGER.info("Using all available negative tiles.")
+        selected_negatives = valid_negatives
+
+    return positive_tiles, selected_negatives, valid_negatives, edge_rejected
+
+
 def main():
     # Setup directories
-    base_dir = Path("tests/experimental")
+    base_dir = Path(__file__).parent
     output_dir = base_dir / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Real Data Paths
-    # Using raw strings for Windows paths
-    aoi_path = base_dir / "aoi.gpkg"
-    atwell_path = Path(r"C:\_code\python\wetlands-ml-atwell\data\Atwell_Wetlands_MI.gpkg")
-    nwi_path = Path(r"C:\_code\python\wetlands-ml-atwell\data\NWI\MI_Wetlands_Geopackage.gpkg")
-    
-    # 1. Load Real Data
-    try:
-        aoi, atwell, nwi = load_real_data(aoi_path, atwell_path, nwi_path)
-    except Exception as e:
-        LOGGER.error(f"Failed to load data: {e}")
-        return
-    
+
+    # Real Data Paths - Michigan small dataset
+    atwell_path = Path(r"C:\_code\python\wetlands-ml-atwell\data\MI_Atwell\small\atwell_wetlands.gpkg")
+    nwi_path = Path(r"C:\_code\python\wetlands-ml-atwell\data\MI_Atwell\small\nwi_mi_wetlands.gpkg")
+
+    # Generate AOI from Atwell data (bounding box + buffer)
+    LOGGER.info("Generating AOI from Atwell delineations...")
+    target_crs = "EPSG:5070"
+
+    atwell_raw = gpd.read_file(atwell_path)
+    if atwell_raw.crs is None:
+        atwell_raw.set_crs("EPSG:4326", inplace=True)
+    atwell_proj = atwell_raw.to_crs(target_crs)
+
+    # Create AOI as bounding box + 1000m buffer
+    aoi_buffer_m = 1000.0
+    bounds = atwell_proj.total_bounds
+    aoi_geom = box(*bounds).buffer(aoi_buffer_m)
+    aoi = gpd.GeoDataFrame({"geometry": [aoi_geom]}, crs=target_crs)
+
+    LOGGER.info(f"AOI created: {aoi_geom.bounds}")
+
+    # Load NWI clipped to AOI
+    # Note: bbox filter uses the CRS of the file being read, which is EPSG:5070
+    aoi_bounds_proj = tuple(aoi.total_bounds)
+
+    nwi_raw = gpd.read_file(nwi_path, bbox=aoi_bounds_proj)
+    if nwi_raw.empty:
+        LOGGER.warning("No NWI wetlands found within AOI!")
+        nwi_proj = gpd.GeoDataFrame({"geometry": []}, crs=target_crs)
+    else:
+        nwi_proj = nwi_raw.to_crs(target_crs)
+        nwi_proj = gpd.clip(nwi_proj, aoi)
+        LOGGER.info(f"Loaded {len(nwi_proj)} NWI polygons within AOI.")
+
+    # Clip Atwell to AOI
+    atwell = gpd.clip(atwell_proj, aoi)
+
     # 2. Run Safe Zone Logic
-    safe_negatives, _ = generate_safe_negatives(aoi, atwell, nwi, buffer_dist=100.0)
-    
-    # 3. Run Balanced Sampling Simulation
-    # Using 256m tile size for visualization purposes (approx 25 pixels at 10m res, or bigger if Sentinel)
-    # Standard Sentinel training chip is often 256px * 10m = 2560m. 
-    # Let's use a smaller tile size (e.g. 500m) just to show the density for this visual check.
-    pos_tiles, neg_tiles = simulate_balanced_sampling(safe_negatives, atwell, aoi, tile_size_m=500.0)
-    
-    # 4. Save Results
-    output_gpkg = output_dir / "real_data_safe_negatives.gpkg"
-    safe_negatives.to_file(output_gpkg, driver="GPKG")
-    
-    # Save tiles for inspection
+    buffer_dist = 100.0
+    safe_negatives, exclusion_union = generate_safe_negatives(aoi, atwell, nwi_proj, buffer_dist=buffer_dist)
+
+    # 3. Run Balanced Sampling with WITHIN test
+    # Using 512m tile size (512px at 1m resolution)
+    tile_size_m = 512.0
+    pos_tiles, neg_tiles_sampled, neg_tiles_all, edge_rejected = simulate_balanced_sampling_within(
+        safe_negatives, atwell, aoi, tile_size_m=tile_size_m
+    )
+
+    # 4. Save ALL layers for QGIS inspection
+    LOGGER.info(f"Saving vector outputs to {output_dir}...")
+
+    # Core layers
+    aoi.to_file(output_dir / "aoi.gpkg", driver="GPKG")
+    atwell.to_file(output_dir / "atwell_wetlands.gpkg", driver="GPKG")
+    nwi_proj.to_file(output_dir / "nwi_wetlands.gpkg", driver="GPKG")
+    safe_negatives.to_file(output_dir / "safe_zone.gpkg", driver="GPKG")
+
+    # Tile layers
     pos_tiles.to_file(output_dir / "tiles_positive.gpkg", driver="GPKG")
-    neg_tiles.to_file(output_dir / "tiles_negative.gpkg", driver="GPKG")
-    
-    LOGGER.info(f"Saved vector outputs to {output_dir}")
-    
+    neg_tiles_sampled.to_file(output_dir / "tiles_negative_sampled.gpkg", driver="GPKG")
+    neg_tiles_all.to_file(output_dir / "tiles_negative_all_valid.gpkg", driver="GPKG")
+
+    if not edge_rejected.empty:
+        edge_rejected.to_file(output_dir / "tiles_edge_rejected.gpkg", driver="GPKG")
+        LOGGER.info(f"  - tiles_edge_rejected.gpkg: {len(edge_rejected)} tiles")
+
+    # Create Atwell buffer zone for visualization
+    atwell_buffer = atwell.copy()
+    atwell_buffer['geometry'] = atwell.buffer(buffer_dist)
+    atwell_buffer.to_file(output_dir / "atwell_buffer_zone.gpkg", driver="GPKG")
+
+    LOGGER.info("Saved layers:")
+    LOGGER.info(f"  - aoi.gpkg: AOI bounding box")
+    LOGGER.info(f"  - atwell_wetlands.gpkg: {len(atwell)} Atwell delineations")
+    LOGGER.info(f"  - atwell_buffer_zone.gpkg: {buffer_dist}m buffer around Atwell")
+    LOGGER.info(f"  - nwi_wetlands.gpkg: {len(nwi_proj)} NWI polygons")
+    LOGGER.info(f"  - safe_zone.gpkg: {len(safe_negatives)} safe zone polygons")
+    LOGGER.info(f"  - tiles_positive.gpkg: {len(pos_tiles)} positive tiles")
+    LOGGER.info(f"  - tiles_negative_all_valid.gpkg: {len(neg_tiles_all)} valid negative tiles")
+    LOGGER.info(f"  - tiles_negative_sampled.gpkg: {len(neg_tiles_sampled)} sampled negatives")
+
+    # Summary stats
+    LOGGER.info("\n=== SUMMARY ===")
+    LOGGER.info(f"Tile size: {tile_size_m}m x {tile_size_m}m")
+    LOGGER.info(f"Positive tiles: {len(pos_tiles)}")
+    LOGGER.info(f"Valid negative tiles: {len(neg_tiles_all)}")
+    LOGGER.info(f"Edge-rejected tiles: {len(edge_rejected)} (would leak NWI pixels)")
+    LOGGER.info(f"Sampled negatives: {len(neg_tiles_sampled)}")
+
     # 5. Visualize
-    plot_results(aoi, atwell, nwi, safe_negatives, pos_tiles, neg_tiles, output_dir / "balanced_sampling_viz.png")
+    plot_results(aoi, atwell, nwi_proj, safe_negatives, pos_tiles, neg_tiles_sampled, output_dir / "balanced_sampling_viz.png")
+    LOGGER.info(f"Plot saved to {output_dir / 'balanced_sampling_viz.png'}")
 
 if __name__ == "__main__":
     main()

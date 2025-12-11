@@ -75,6 +75,43 @@ class TilingConfig:
 
 
 @dataclass
+class SamplingConfig:
+    """Configuration for balanced tile sampling with safe zones.
+
+    When enabled, this uses NWI-filtered negative sampling to avoid
+    false negatives from wetlands that exist but weren't delineated
+    in the training labels.
+
+    Attributes:
+        enabled: Whether to use balanced sampling (default: False).
+        nwi_path: Path to NWI wetlands for safe zone calculation.
+        positive_negative_ratio: Ratio of negative to positive tiles (default: 1.0).
+        safe_zone_buffer: Buffer distance around positive labels in meters (default: 100.0).
+    """
+    enabled: bool = False
+    nwi_path: Optional[Path] = None
+    positive_negative_ratio: float = 1.0
+    safe_zone_buffer: float = 100.0
+
+    def validate(self) -> None:
+        """Validate sampling configuration.
+
+        Raises:
+            ValueError: If configuration is invalid.
+            FileNotFoundError: If NWI path doesn't exist when enabled.
+        """
+        if self.enabled:
+            if self.nwi_path is None:
+                raise ValueError("nwi_path is required when balanced sampling is enabled")
+            if not self.nwi_path.exists():
+                raise FileNotFoundError(f"NWI file not found: {self.nwi_path}")
+        if self.positive_negative_ratio <= 0:
+            raise ValueError(f"positive_negative_ratio must be positive, got {self.positive_negative_ratio}")
+        if self.safe_zone_buffer < 0:
+            raise ValueError(f"safe_zone_buffer must be non-negative, got {self.safe_zone_buffer}")
+
+
+@dataclass
 class ModelConfig:
     """Configuration for neural network architecture.
     
@@ -151,7 +188,7 @@ class TrainingHyperparameters:
 @dataclass
 class TrainingConfig:
     """Complete configuration for a training run.
-    
+
     Attributes:
         labels_path: Path to training labels (GeoPackage or shapefile).
         train_raster: Path to training raster (optional if stack_manifest provided).
@@ -161,6 +198,7 @@ class TrainingConfig:
         tiling: Tile generation configuration.
         model: Neural network configuration.
         hyperparameters: Training hyperparameters.
+        sampling: Balanced sampling configuration for safe zone negative selection.
         target_size: Optional resize dimensions (height, width).
         resize_mode: How to resize ('resize' or 'pad').
         num_workers: DataLoader workers (None = auto).
@@ -174,10 +212,11 @@ class TrainingConfig:
     stack_manifest: Optional[Path] = None
     tiles_dir: Optional[Path] = None
     models_dir: Optional[Path] = None
-    
+
     tiling: TilingConfig = field(default_factory=TilingConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     hyperparameters: TrainingHyperparameters = field(default_factory=TrainingHyperparameters)
+    sampling: SamplingConfig = field(default_factory=SamplingConfig)
     
     target_size: Optional[Tuple[int, int]] = None
     resize_mode: str = "resize"
@@ -231,6 +270,7 @@ class TrainingConfig:
         self.tiling.validate()
         self.model.validate()
         self.hyperparameters.validate()
+        self.sampling.validate()
 
 
 @dataclass
@@ -320,6 +360,7 @@ class InferenceConfig:
 
 __all__ = [
     "TilingConfig",
+    "SamplingConfig",
     "ModelConfig",
     "TrainingHyperparameters",
     "TrainingConfig",

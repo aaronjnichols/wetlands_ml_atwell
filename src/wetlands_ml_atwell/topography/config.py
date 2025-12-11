@@ -28,6 +28,8 @@ class TopographyStackConfig:
     """Optional directory containing pre-downloaded DEM tiles."""
     dem_paths: Optional[Sequence[Path]] = None
     """Optional explicit list of DEM GeoTIFF paths to use."""
+    dem_resolution: Optional[str] = None
+    """DEM resolution preference ('1m', '10m', '30m'). Default None uses 1m."""
 
 
 __all__ = ["TopographyStackConfig"]

@@ -7,6 +7,7 @@ workflows, with support for validation and YAML-based configuration files.
 from .models import (
     InferenceConfig,
     ModelConfig,
+    SamplingConfig,
     TilingConfig,
     TrainingConfig,
     TrainingHyperparameters,
@@ -20,6 +21,7 @@ from .yaml_loader import (
 __all__ = [
     # Dataclasses
     "TilingConfig",
+    "SamplingConfig",
     "ModelConfig",
     "TrainingHyperparameters",
     "TrainingConfig",

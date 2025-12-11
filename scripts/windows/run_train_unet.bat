@@ -7,15 +7,15 @@ cd /d "%~dp0..\.."
 REM ------------------------------------------------------------------
 REM Training Configuration
 REM ------------------------------------------------------------------
-set "STACK_MANIFEST=data\20251201_MI_NWI_Small_Test\train\s2_tmp\aoi_01\stack_manifest.json"
+set "STACK_MANIFEST=data\MI_Atwell\big\train\s2\manifest_index.json"
 set "TRAIN_RASTER="
-set "LABELS=data\mi_nwi_wetlands.gpkg"
-set "TILES_DIR=data\20251201_MI_NWI_Small_Test\train\s2_tmp\tiles_tmp_test"
-set "MODELS_DIR=data\20251201_MI_NWI_Small_Test\train\s2_tmp\models_tmp_test"
+set "LABELS=data\MI_Atwell\big\train_wetlands_atwell.gpkg"
+set "TILES_DIR=data\MI_Atwell\big\train\s2\tiles"
+set "MODELS_DIR=data\MI_Atwell\big\train\s2\models"
 
 REM Tiling
 set "TILE_SIZE=512"
-set "STRIDE=256"
+set "STRIDE=512"
 set "BUFFER=0"
 
 REM Model
@@ -28,16 +28,22 @@ set "NUM_CLASSES="
 
 REM Hyperparameters
 set "BATCH_SIZE=16"
-set "EPOCHS=3"
+set "EPOCHS=10"
 set "LEARNING_RATE=0.0001"
 set "WEIGHT_DECAY=0.0001"
 set "VAL_SPLIT=0.2"
 set "SEED=42"
 
+REM Balanced Sampling (NWI-filtered to avoid false negatives)
+set "BALANCED_SAMPLING=true"
+set "NWI_PATH=data\NWI\MI_Wetlands_Geopackage.gpkg"
+set "POSITIVE_NEGATIVE_RATIO=1.0"
+set "SAFE_ZONE_BUFFER=100.0"
+
 REM Runtime
 set "TARGET_SIZE="
 set "RESIZE_MODE=resize"
-set "NUM_WORKERS="
+set "NUM_WORKERS=8"
 set "PLOT_CURVES=true"
 set "SAVE_BEST_ONLY=true"
 set "CHECKPOINT_PATH="
@@ -98,6 +104,14 @@ if not "%CHECKPOINT_PATH%"=="" set "ARGS=%ARGS% --checkpoint-path "%CHECKPOINT_P
 if /I "%PLOT_CURVES%"=="true" set "ARGS=%ARGS% --plot-curves"
 if /I "%SAVE_BEST_ONLY%"=="false" set "ARGS=%ARGS% --save-all-checkpoints"
 if /I "%RESUME_TRAINING%"=="true" set "ARGS=%ARGS% --resume-training"
+
+REM Balanced sampling arguments
+if /I "%BALANCED_SAMPLING%"=="true" (
+    set "ARGS=%ARGS% --balanced-sampling"
+    if not "%NWI_PATH%"=="" set "ARGS=%ARGS% --nwi-path "%NWI_PATH%""
+    if not "%POSITIVE_NEGATIVE_RATIO%"=="" set "ARGS=%ARGS% --positive-negative-ratio %POSITIVE_NEGATIVE_RATIO%"
+    if not "%SAFE_ZONE_BUFFER%"=="" set "ARGS=%ARGS% --safe-zone-buffer %SAFE_ZONE_BUFFER%"
+)
 
 REM ------------------------------------------------------------------
 REM Execution

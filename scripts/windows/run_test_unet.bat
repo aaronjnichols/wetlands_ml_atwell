@@ -18,16 +18,16 @@ if errorlevel 1 goto :fail
 REM ------------------------------------------------------------------
 REM Inference Configuration
 REM ------------------------------------------------------------------
-set "STACK_MANIFEST=data\20251201_MI_NWI_Small_Test\test\s2\aoi_01\stack_manifest.json"
+set "STACK_MANIFEST=data\MI_Atwell\big\test\check_point_6epochs\s2\aoi_01\stack_manifest.json"
 set "TEST_RASTER="
-set "MODEL_PATH=data\20251201_MI_NWI_Small_Test\train\models\best_model.pth"
-set "OUTPUT_DIR=data\20251201_MI_NWI_Small_Test\test"
+set "MODEL_PATH=data\MI_Atwell\small\20251204\train\s2\models\best_model.pth"
+set "OUTPUT_DIR=data\MI_Atwell\big\test\check_point_6epochs"
 set "MASK_PATH="
 set "VECTOR_PATH="
 
 REM Windowing
 set "WINDOW_SIZE=512"
-set "OVERLAP=256"
+set "OVERLAP=0"
 set "BATCH_SIZE=16"
 
 REM Model Params
@@ -37,8 +37,8 @@ set "ARCHITECTURE=unet"
 set "ENCODER_NAME=resnet34"
 
 REM Post-Processing
-set "MIN_AREA=100"
-set "SIMPLIFY=1.0"
+set "MIN_AREA=10"
+set "SIMPLIFY=2.0"
 set "PROB_THRESHOLD=0.5"
 set "LOG_LEVEL=INFO"
 

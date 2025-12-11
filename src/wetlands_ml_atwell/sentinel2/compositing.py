@@ -14,6 +14,7 @@ from rasterio.warp import transform_geom
 from shapely.geometry import Polygon, mapping, shape
 
 from ..services.download import NaipService, WetlandsService, NaipDownloadRequest, WetlandsDownloadRequest
+from ..training.sampling import create_acquisition_aoi
 from ..topography import TopographyStackConfig, prepare_topography_stack
 from .aoi import parse_aoi, extract_aoi_polygons
 from .manifests import write_manifest_index, write_stack_manifest
@@ -53,6 +54,11 @@ def _iter_aoi_processing(
     min_clear_obs: int,
     mask_dilation: int,
     tiles_per_season: Path,
+    chunk_size: Optional[int] = None,
+    max_scenes_per_season: Optional[int] = None,
+    parallel_fetch: bool = False,
+    fetch_workers: int = 24,
+    target_crs: Optional[str] = None,
 ) -> Iterable[AoiProcessingOutput]:
     for index, polygon in enumerate(polygons, start=1):
         aoi_dir = tiles_per_season / f"aoi_{index:02d}"
@@ -70,13 +76,44 @@ def _iter_aoi_processing(
             LOGGER.info("%s -- fetching Sentinel-2 scenes", raster_label)
             LOGGER.info("=" * 60)
             items = fetch_items(client, polygon, season, years, cloud_cover)
-            LOGGER.info("%s -- found %d scenes", raster_label, len(items))
+            total_found = len(items)
+            LOGGER.info("%s -- found %d scenes", raster_label, total_found)
+
+            # Log unique tile IDs to help diagnose coverage issues
+            if items:
+                tile_ids = set()
+                for item in items:
+                    # Extract tile ID from scene ID (e.g., "S2A_16TFN_20231113_1_L2A" -> "16TFN")
+                    parts = item.id.split("_")
+                    if len(parts) >= 2:
+                        tile_ids.add(parts[1])
+                LOGGER.info("%s -- tiles: %s", raster_label, ", ".join(sorted(tile_ids)))
 
             if not items:
                 LOGGER.warning("%s -- no Sentinel-2 scenes", raster_label)
                 continue
 
-            median, counts = seasonal_median(items, season, min_clear_obs, bounds, mask_dilation)
+            # Filter to best N scenes by cloud cover if requested
+            if max_scenes_per_season and len(items) > max_scenes_per_season:
+                from .stac_client import filter_best_scenes
+                items = filter_best_scenes(items, max_scenes_per_season)
+                LOGGER.info(
+                    "%s -- filtered to %d/%d clearest scenes",
+                    raster_label, len(items), total_found
+                )
+
+            # Use parallel fetch strategy if enabled, otherwise use standard stackstac
+            if parallel_fetch:
+                from .seasonal import seasonal_median_parallel
+                median, counts = seasonal_median_parallel(
+                    items, season, min_clear_obs, bounds, mask_dilation,
+                    chunks=chunk_size, max_workers=fetch_workers, target_crs=target_crs
+                )
+            else:
+                median, counts = seasonal_median(
+                    items, season, min_clear_obs, bounds, mask_dilation,
+                    chunks=chunk_size, target_crs=target_crs
+                )
 
             median_crs = median.rio.crs
             clip_geom = shapely_mask
@@ -135,6 +172,7 @@ def run_pipeline(
     wetlands_output_path: Optional[Path] = None,
     wetlands_overwrite: bool = False,
     naip_target_resolution: Optional[float] = None,
+    target_crs: str = "EPSG:5070",
     mask_dilation: int = 0,
     auto_download_topography: bool = False,
     topography_cache_dir: Optional[Path] = None,
@@ -142,6 +180,11 @@ def run_pipeline(
     topography_buffer_meters: float = 200.0,
     topography_tpi_small: float = 30.0,
     topography_tpi_large: float = 150.0,
+    dem_resolution: Optional[str] = None,
+    chunk_size: Optional[str] = "auto",
+    max_scenes_per_season: Optional[int] = None,
+    parallel_fetch: bool = False,
+    fetch_workers: int = 24,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     naip_candidates: List[Path] = list(naip_paths) if naip_paths else []
@@ -194,6 +237,22 @@ def run_pipeline(
     if not polygons:
         raise ValueError("No valid AOI polygons extracted.")
 
+    # Resolve chunk size for dask processing
+    from .stac_client import compute_chunk_size
+
+    resolved_chunk_size: Optional[int] = None
+    if chunk_size == "auto":
+        # Compute based on first polygon's bounds (AOIs should be similar size)
+        if polygons:
+            resolved_chunk_size = compute_chunk_size(polygons[0].bounds)
+            LOGGER.info("Auto-computed chunk size: %d pixels", resolved_chunk_size)
+    elif chunk_size is not None and chunk_size.lower() != "none":
+        try:
+            resolved_chunk_size = int(chunk_size)
+            LOGGER.info("Using specified chunk size: %d pixels", resolved_chunk_size)
+        except (ValueError, TypeError):
+            LOGGER.warning("Invalid chunk_size '%s', using default (2048)", chunk_size)
+
     manifest_paths: List[Path] = []
     progress = RasterProgress(total=len(polygons) * (len(seasons) + int(has_naip)))
 
@@ -213,6 +272,11 @@ def run_pipeline(
         min_clear_obs=min_clear_obs,
         mask_dilation=mask_dilation,
         tiles_per_season=output_dir,
+        chunk_size=resolved_chunk_size,
+        max_scenes_per_season=max_scenes_per_season,
+        parallel_fetch=parallel_fetch,
+        fetch_workers=fetch_workers,
+        target_crs=target_crs,
     ):
         index = output.index
         aoi_dir = output.directory
@@ -259,6 +323,7 @@ def run_pipeline(
             filtered_naip_sources,
             aoi_dir,
             target_resolution=naip_target_resolution,
+            target_crs=target_crs,
         )
 
         clipped_naip_path = aoi_dir / "naip_clipped.tif"
@@ -276,6 +341,7 @@ def run_pipeline(
                 tpi_large_radius=topography_tpi_large,
                 cache_dir=topography_cache_dir,
                 dem_dir=topography_dem_dir,
+                dem_resolution=dem_resolution,
             )
             topography_path = prepare_topography_stack(topo_config)
             extra_sources = [
@@ -323,7 +389,25 @@ def run_pipeline(
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--aoi", required=True, help="AOI path or geometry (GeoJSON, WKT, or bbox)")
+    parser.add_argument(
+        "--aoi",
+        help="AOI path or geometry (GeoJSON, WKT, or bbox). Required unless --labels-path is provided.",
+    )
+    parser.add_argument(
+        "--labels-path",
+        type=Path,
+        help=(
+            "Path to wetland labels (e.g., Atwell delineations GeoPackage). "
+            "If provided, an AOI will be auto-generated from the labels bounding box + buffer. "
+            "Use this instead of --aoi to derive the processing extent from your training data."
+        ),
+    )
+    parser.add_argument(
+        "--labels-buffer",
+        type=float,
+        default=1000.0,
+        help="Buffer distance in meters around labels when auto-generating AOI (default: 1000m).",
+    )
     parser.add_argument("--years", required=True, nargs="+", type=int, help="Years to include (e.g., 2022 2023)")
     parser.add_argument(
         "--output-dir",
@@ -368,6 +452,44 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=0,
         help="Number of pixels to dilate the SCL cloud mask",
+    )
+    parser.add_argument(
+        "--chunk-size",
+        default="auto",
+        help=(
+            "Dask chunk size for Sentinel-2 processing. Options: "
+            "'auto' (compute based on AOI size, recommended), integer value "
+            "(e.g., 512), or 'none' to disable chunking. Default: 'auto'. "
+            "Smaller chunks improve parallelization but increase overhead."
+        ),
+    )
+    parser.add_argument(
+        "--max-scenes-per-season",
+        type=int,
+        default=None,
+        help=(
+            "Maximum number of scenes to use per season, selecting the N clearest "
+            "by cloud cover. Reduces processing time significantly. "
+            "Default: None (use all scenes). Recommended: 20 for faster processing."
+        ),
+    )
+    parser.add_argument(
+        "--parallel-fetch",
+        action="store_true",
+        help=(
+            "Use parallel pre-download strategy instead of stackstac lazy loading. "
+            "Downloads all scene data in parallel before computing median, providing "
+            "5-10x speedup. Recommended for most use cases."
+        ),
+    )
+    parser.add_argument(
+        "--fetch-workers",
+        type=int,
+        default=24,
+        help=(
+            "Number of parallel workers for scene downloads when --parallel-fetch "
+            "is enabled. Default: 24. Adjust based on network bandwidth and CPU cores."
+        ),
     )
     parser.add_argument(
         "--auto-download-naip",
@@ -415,6 +537,15 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
         help="Optional NAIP resampling resolution in meters.",
     )
     parser.add_argument(
+        "--target-crs",
+        default="EPSG:5070",
+        help=(
+            "Target CRS for all output rasters. EPSG:5070 (NAD83 Conus Albers) is "
+            "recommended for continental US coverage to avoid UTM zone boundary issues. "
+            "Default: EPSG:5070"
+        ),
+    )
+    parser.add_argument(
         "--auto-download-topography",
         action="store_true",
         help="Automatically derive LiDAR-based topographic features for the stack.",
@@ -448,6 +579,17 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
         help="Directory of pre-downloaded DEM GeoTIFF tiles to use instead of fetching from 3DEP.",
     )
     parser.add_argument(
+        "--dem-resolution",
+        type=str,
+        choices=["1m", "10m", "30m"],
+        default=None,
+        help=(
+            "DEM resolution preference for topography downloads. "
+            "Options: '1m' (default, highest detail), '10m' (faster, good for 10m stacks), "
+            "'30m' (fastest, coarse). If not set, defaults to 1m."
+        ),
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -456,8 +598,28 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
 
 
 def run_from_args(args: argparse.Namespace) -> None:
+    # Determine AOI: either from --aoi directly or auto-generated from --labels-path
+    aoi = args.aoi
+    if args.labels_path:
+        if not args.labels_path.exists():
+            raise FileNotFoundError(f"Labels file not found: {args.labels_path}")
+        LOGGER.info(
+            "Generating AOI from labels: %s (buffer: %.0fm)",
+            args.labels_path,
+            args.labels_buffer,
+        )
+        generated_aoi_path = create_acquisition_aoi(
+            labels_path=args.labels_path,
+            output_path=args.output_dir / "generated_aoi.gpkg",
+            buffer_meters=args.labels_buffer,
+        )
+        aoi = str(generated_aoi_path)
+        LOGGER.info("Generated AOI saved to: %s", aoi)
+    elif not aoi:
+        raise ValueError("Either --aoi or --labels-path must be provided.")
+
     run_pipeline(
-        aoi=args.aoi,
+        aoi=aoi,
         years=args.years,
         output_dir=args.output_dir,
         seasons=tuple(args.seasons),
@@ -474,6 +636,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         wetlands_output_path=args.wetlands_output_path,
         wetlands_overwrite=args.wetlands_overwrite,
         naip_target_resolution=args.naip_target_resolution,
+        target_crs=args.target_crs,
         mask_dilation=args.mask_dilation,
         auto_download_topography=args.auto_download_topography,
         topography_cache_dir=args.topography_cache_dir,
@@ -481,6 +644,11 @@ def run_from_args(args: argparse.Namespace) -> None:
         topography_buffer_meters=args.topography_buffer_meters,
         topography_tpi_small=args.topography_tpi_small,
         topography_tpi_large=args.topography_tpi_large,
+        dem_resolution=args.dem_resolution,
+        chunk_size=args.chunk_size,
+        max_scenes_per_season=args.max_scenes_per_season,
+        parallel_fetch=args.parallel_fetch,
+        fetch_workers=args.fetch_workers,
     )
 
 

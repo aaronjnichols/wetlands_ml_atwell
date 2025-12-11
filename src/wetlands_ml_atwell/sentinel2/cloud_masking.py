@@ -51,50 +51,63 @@ def stack_scl(
     items: Sequence[Item],
     bounds: Tuple[float, float, float, float],
     chunks: Optional[int] = 2048,
+    target_crs: Optional[str] = None,
 ) -> xr.DataArray:
     """Create Scene Classification Layer (SCL) stack from STAC items.
-    
+
     The SCL band provides per-pixel classification of cloud, shadow,
     vegetation, water, and other surface types.
-    
+
     Args:
         items: Sentinel-2 STAC items to stack.
         bounds: Bounding box in lat/lon (minx, miny, maxx, maxy).
         chunks: Dask chunk size for x/y dimensions. None disables chunking.
-        
+        target_crs: Target CRS for output (e.g., "EPSG:5070"). If None,
+            uses the first item's native CRS.
+
     Returns:
         3D DataArray with dimensions (time, y, x) containing SCL values.
-        
+
     Raises:
         ValueError: If items are missing proj:epsg or SCL asset.
     """
-    # Get EPSG via projection extension (handles both legacy and new STAC formats)
-    try:
-        proj_ext = ProjectionExtension.ext(items[0])
-        epsg = proj_ext.epsg
-    except Exception:
-        # Fallback to legacy property access
-        epsg = items[0].properties.get("proj:epsg")
+    # Determine output EPSG: use target_crs if provided, else first item's CRS
+    if target_crs:
+        # Parse EPSG from string like "EPSG:5070" or just "5070"
+        if ":" in target_crs:
+            output_epsg = int(target_crs.split(":")[1])
+        else:
+            output_epsg = int(target_crs)
+    else:
+        # Fall back to first item's EPSG (legacy behavior)
+        try:
+            proj_ext = ProjectionExtension.ext(items[0])
+            output_epsg = proj_ext.epsg
+        except Exception:
+            # Fallback to legacy property access
+            output_epsg = items[0].properties.get("proj:epsg")
 
-    if epsg is None:
-        raise ValueError("Sentinel-2 item missing projection metadata (proj:epsg).")
+        if output_epsg is None:
+            raise ValueError("Sentinel-2 item missing projection metadata (proj:epsg).")
+
     if SCL_ASSET_ID not in items[0].assets:
         raise ValueError(f"Sentinel-2 item missing {SCL_ASSET_ID} asset.")
-    
+
     scl = stackstac.stack(
         items,
         assets=[SCL_ASSET_ID],
         resolution=10,
-        epsg=int(epsg),
+        epsg=int(output_epsg),
         bounds_latlon=bounds,
         chunksize={"x": chunks, "y": chunks} if chunks else None,
-        dtype="float64",
+        dtype="float32",
+        fill_value=np.float32(0),
         rescale=False,
         properties=False,
     ).squeeze("band")
-    
+
     scl = scl.reset_coords(drop=True)
-    scl.rio.write_crs(int(epsg), inplace=True)
+    scl.rio.write_crs(int(output_epsg), inplace=True)
     return scl
 
 
