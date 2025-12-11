@@ -140,6 +140,7 @@ def _predict_probabilities(model: torch.nn.Module, tensor: torch.Tensor) -> np.n
 def _finalize_predictions(
     prob_accumulator: np.ndarray,
     count_accumulator: np.ndarray,
+    valid_accumulator: np.ndarray,
     probability_threshold: Optional[float],
     num_classes: int,
 ) -> np.ndarray:
@@ -151,7 +152,11 @@ def _finalize_predictions(
     else:
         mask = np.argmax(averaged, axis=0).astype(np.uint8)
 
+    # Mask out pixels that were never covered by a window
     mask[count_accumulator == 0] = 0
+    # Mask out pixels that had no valid (non-nodata) input data
+    # This prevents predictions in areas outside the AOI polygon
+    mask[valid_accumulator == 0] = 0
     return mask
 
 
@@ -217,6 +222,7 @@ def _stream_inference(
 
     prob_accumulator = np.zeros((num_classes, height, width), dtype=np.float32)
     count_accumulator = np.zeros((height, width), dtype=np.float32)
+    valid_accumulator = np.zeros((height, width), dtype=np.float32)
 
     start = time.perf_counter()
 
@@ -225,6 +231,18 @@ def _stream_inference(
             for col_off in col_offsets:
                 win = Window(col_off, row_off, window_w, window_h)
                 data = read_window(win)
+
+                # Track which pixels have valid (non-nodata) data before normalization
+                # A pixel is valid only if ALL bands have non-nodata values.
+                # This is critical because some sources (e.g., NAIP) may not be clipped
+                # to the AOI polygon, while others (e.g., topography) are. Using np.all()
+                # ensures that if ANY band is nodata (like topography outside AOI),
+                # the pixel is masked out in the final predictions.
+                if nodata_value is not None:
+                    valid_mask = np.all(data != nodata_value, axis=0).astype(np.float32)
+                else:
+                    valid_mask = np.ones((data.shape[1], data.shape[2]), dtype=np.float32)
+
                 prepared = _prepare_window(data, channel_count, nodata_value, legacy_normalization)
                 tensor = torch.from_numpy(prepared).to(device).unsqueeze(0)
 
@@ -237,10 +255,12 @@ def _stream_inference(
 
                 prob_accumulator[:, row_off:row_end, col_off:col_end] += probabilities[:, :h, :w]
                 count_accumulator[row_off:row_end, col_off:col_end] += 1.0
+                valid_accumulator[row_off:row_end, col_off:col_end] += valid_mask[:h, :w]
 
     predicted = _finalize_predictions(
         prob_accumulator,
         count_accumulator,
+        valid_accumulator,
         probability_threshold,
         num_classes,
     )
