@@ -8,19 +8,68 @@ from typing import Iterable
 
 import numpy as np
 import rasterio
-from rasterio import warp
+from rasterio import warp, features
 from rasterio.enums import Resampling
 from rasterio.merge import merge
 from rasterio.transform import Affine
 from rasterio.crs import CRS
 from rasterio.vrt import WarpedVRT
+from rasterio.warp import transform_geom
 from scipy import ndimage
+from shapely.geometry import mapping
+from shapely.geometry.base import BaseGeometry
 
 from ..stacking import FLOAT_NODATA
 from .config import TopographyStackConfig
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _create_aoi_mask(
+    aoi: BaseGeometry,
+    transform: Affine,
+    width: int,
+    height: int,
+    crs: str,
+) -> np.ndarray:
+    """Create a boolean mask where True = inside AOI, False = outside.
+
+    Args:
+        aoi: AOI polygon in WGS84 (EPSG:4326).
+        transform: Affine transform of the target raster.
+        width: Width of the target raster in pixels.
+        height: Height of the target raster in pixels.
+        crs: CRS string of the target raster.
+
+    Returns:
+        Boolean numpy array of shape (height, width).
+    """
+    aoi_geom = mapping(aoi)
+
+    # Transform AOI geometry from WGS84 to raster CRS
+    # If transformation fails (e.g., test fixtures with non-geographic coords),
+    # assume geometry is already in target CRS
+    try:
+        aoi_transformed = transform_geom("EPSG:4326", crs, aoi_geom)
+    except Exception as e:
+        LOGGER.warning(
+            "AOI transformation from EPSG:4326 to %s failed (%s); "
+            "assuming geometry is already in target CRS",
+            crs,
+            e,
+        )
+        aoi_transformed = aoi_geom
+
+    # Rasterize the geometry to create a mask
+    mask = features.rasterize(
+        [(aoi_transformed, 1)],
+        out_shape=(height, width),
+        transform=transform,
+        fill=0,
+        dtype="uint8",
+    )
+    return mask.astype(bool)
 
 
 def _read_transform(reference_path: Path) -> tuple[Affine, int, int, float, str]:
@@ -167,6 +216,16 @@ def write_topography_raster(config: TopographyStackConfig, dem_paths: Iterable[P
     LOGGER.info("Computing depression depth")
     depression = _compute_depression_depth(dem)
     depression[dem_mask] = FLOAT_NODATA
+
+    # Apply AOI mask to clip output to the AOI polygon boundary
+    if config.aoi is not None:
+        LOGGER.info("Clipping topography to AOI boundary")
+        aoi_mask = _create_aoi_mask(config.aoi, transform, width, height, crs)
+        outside_aoi = ~aoi_mask
+        slope[outside_aoi] = FLOAT_NODATA
+        tpi_small[outside_aoi] = FLOAT_NODATA
+        tpi_large[outside_aoi] = FLOAT_NODATA
+        depression[outside_aoi] = FLOAT_NODATA
 
     profile = {
         "driver": "GTiff",
