@@ -406,6 +406,7 @@ def train_unet(
     num_workers: Optional[int] = None,
     checkpoint_path: Optional[Path] = None,
     resume_training: bool = False,
+    skip_tiling: bool = False,
     # Balanced sampling parameters
     balanced_sampling: bool = False,
     nwi_path: Optional[Path] = None,
@@ -445,132 +446,152 @@ def train_unet(
     images_dir = tiles_dir / "images"
     labels_dir = tiles_dir / "labels"
 
-    if images_dir.exists():
-        logging.info("Clearing existing image tiles at %s", images_dir)
-        _clear_directory(images_dir)
-    if labels_dir.exists():
-        logging.info("Clearing existing label tiles at %s", labels_dir)
-        _clear_directory(labels_dir)
-    images_dir.mkdir(parents=True, exist_ok=True)
-    labels_dir.mkdir(parents=True, exist_ok=True)
-
-    staging_candidates = sorted(tiles_dir.glob("_staging_tiles*"))
-    for stale in staging_candidates:
-        try:
-            _clear_directory(stale)
-        except PermissionError:
-            logging.warning("Unable to remove stale staging directory %s", stale)
-
-    staging_root = tiles_dir / f"_staging_tiles_{int(time.time())}"
-    staging_root.mkdir(parents=True, exist_ok=True)
-
-    label_cache: dict[str, Path] = {}
-
-    def _labels_for_crs(target_crs: CRS | None) -> Path:
-        key = target_crs.to_string() if target_crs else "None"
-        if key not in label_cache:
-            label_cache[key] = _prepare_labels(labels_path, tiles_dir, target_crs)
-        return label_cache[key]
-
-    total_tiles = 0
-
-    if manifests:
-        for idx, manifest in enumerate(manifests):
-            naip_source = manifest.naip
-            if naip_source is None:
-                logging.warning(
-                    "Skipping manifest %s because it lacks a NAIP source.",
-                    manifest.path,
-                )
-                continue
-
-            raster_path = naip_source.path
-            try:
-                with rasterio.open(raster_path) as src:
-                    manifest_crs = src.crs
-            except RasterioIOError as exc:
-                logging.warning(
-                    "Skipping manifest %s because the NAIP raster is unavailable: %s",
-                    manifest.path,
-                    exc,
-                )
-                continue
-
-            labels_source = _labels_for_crs(manifest_crs)
-
-            staging_dir = staging_root / f"manifest_{idx:03d}"
-            if staging_dir.exists():
-                _clear_directory(staging_dir)
+    # Check if we can skip tiling
+    if skip_tiling:
+        existing_images = list(images_dir.glob("*.tif")) if images_dir.exists() else []
+        existing_labels = list(labels_dir.glob("*.tif")) if labels_dir.exists() else []
+        if existing_images and existing_labels:
             logging.info(
-                "Exporting tiles for manifest %s to %s",
-                manifest.path,
-                staging_dir,
+                "Skipping tile generation (--skip-tiling): found %d image tiles, %d label tiles",
+                len(existing_images),
+                len(existing_labels),
             )
+            total_tiles = len(existing_images)
+        else:
+            raise RuntimeError(
+                f"--skip-tiling specified but tiles not found. "
+                f"images_dir={images_dir} has {len(existing_images)} tiles, "
+                f"labels_dir={labels_dir} has {len(existing_labels)} tiles. "
+                f"Run without --skip-tiling first to generate tiles."
+            )
+    else:
+        # Normal tiling flow: clear and regenerate
+        if images_dir.exists():
+            logging.info("Clearing existing image tiles at %s", images_dir)
+            _clear_directory(images_dir)
+        if labels_dir.exists():
+            logging.info("Clearing existing label tiles at %s", labels_dir)
+            _clear_directory(labels_dir)
+        images_dir.mkdir(parents=True, exist_ok=True)
+        labels_dir.mkdir(parents=True, exist_ok=True)
+
+        staging_candidates = sorted(tiles_dir.glob("_staging_tiles*"))
+        for stale in staging_candidates:
+            try:
+                _clear_directory(stale)
+            except PermissionError:
+                logging.warning("Unable to remove stale staging directory %s", stale)
+
+        staging_root = tiles_dir / f"_staging_tiles_{int(time.time())}"
+        staging_root.mkdir(parents=True, exist_ok=True)
+
+        label_cache: dict[str, Path] = {}
+
+        def _labels_for_crs(target_crs: CRS | None) -> Path:
+            key = target_crs.to_string() if target_crs else "None"
+            if key not in label_cache:
+                label_cache[key] = _prepare_labels(labels_path, tiles_dir, target_crs)
+            return label_cache[key]
+
+        total_tiles = 0
+
+        if manifests:
+            for idx, manifest in enumerate(manifests):
+                naip_source = manifest.naip
+                if naip_source is None:
+                    logging.warning(
+                        "Skipping manifest %s because it lacks a NAIP source.",
+                        manifest.path,
+                    )
+                    continue
+
+                raster_path = naip_source.path
+                try:
+                    with rasterio.open(raster_path) as src:
+                        manifest_crs = src.crs
+                except RasterioIOError as exc:
+                    logging.warning(
+                        "Skipping manifest %s because the NAIP raster is unavailable: %s",
+                        manifest.path,
+                        exc,
+                    )
+                    continue
+
+                labels_source = _labels_for_crs(manifest_crs)
+
+                staging_dir = staging_root / f"manifest_{idx:03d}"
+                if staging_dir.exists():
+                    _clear_directory(staging_dir)
+                logging.info(
+                    "Exporting tiles for manifest %s to %s",
+                    manifest.path,
+                    staging_dir,
+                )
+                geoai.export_geotiff_tiles(
+                    in_raster=str(raster_path),
+                    out_folder=str(staging_dir),
+                    in_class_data=str(labels_source),
+                    tile_size=tile_size,
+                    stride=stride,
+                    buffer_radius=buffer_radius,
+                )
+
+                staging_images = staging_dir / "images"
+                staging_labels = staging_dir / "labels"
+                image_paths = sorted(staging_images.glob("*.tif")) if staging_images.exists() else []
+
+                if not image_paths:
+                    logging.warning("No tiles were generated for manifest %s", manifest.path)
+                    _clear_directory(staging_dir)
+                    continue
+
+                rewritten = rewrite_tile_images(manifest, staging_images)
+                logging.info(
+                    "Rewrote %s image tiles using manifest %s",
+                    rewritten,
+                    manifest.path,
+                )
+
+                for image_path in image_paths:
+                    dest_name = f"aoi{idx:02d}_{image_path.name}"
+                    shutil.move(str(image_path), images_dir / dest_name)
+                    label_path = staging_labels / image_path.name
+                    if not label_path.exists():
+                        raise FileNotFoundError(
+                            f"Missing label tile matching {image_path.name} in {staging_labels}"
+                        )
+                    shutil.move(str(label_path), labels_dir / dest_name)
+
+                total_tiles += len(image_paths)
+                _clear_directory(staging_dir)
+        else:
+            with rasterio.open(base_raster) as src:
+                raster_crs = src.crs
+            labels_source = _labels_for_crs(raster_crs)
+            logging.info("Exporting tiles to %s", tiles_dir)
             geoai.export_geotiff_tiles(
-                in_raster=str(raster_path),
-                out_folder=str(staging_dir),
+                in_raster=str(base_raster),
+                out_folder=str(tiles_dir),
                 in_class_data=str(labels_source),
                 tile_size=tile_size,
                 stride=stride,
                 buffer_radius=buffer_radius,
             )
+            total_tiles = len(list(images_dir.glob("*.tif")))
 
-            staging_images = staging_dir / "images"
-            staging_labels = staging_dir / "labels"
-            image_paths = sorted(staging_images.glob("*.tif")) if staging_images.exists() else []
+        try:
+            _clear_directory(staging_root)
+        except PermissionError:
+            logging.warning("Unable to remove staging directory %s; continuing.", staging_root)
 
-            if not image_paths:
-                logging.warning("No tiles were generated for manifest %s", manifest.path)
-                _clear_directory(staging_dir)
-                continue
-
-            rewritten = rewrite_tile_images(manifest, staging_images)
-            logging.info(
-                "Rewrote %s image tiles using manifest %s",
-                rewritten,
-                manifest.path,
+        if not images_dir.exists() or not any(images_dir.glob("*.tif")):
+            raise RuntimeError(
+                "No image tiles were generated. Check stack manifests and tiling parameters."
             )
-
-            for image_path in image_paths:
-                dest_name = f"aoi{idx:02d}_{image_path.name}"
-                shutil.move(str(image_path), images_dir / dest_name)
-                label_path = staging_labels / image_path.name
-                if not label_path.exists():
-                    raise FileNotFoundError(
-                        f"Missing label tile matching {image_path.name} in {staging_labels}"
-                    )
-                shutil.move(str(label_path), labels_dir / dest_name)
-
-            total_tiles += len(image_paths)
-            _clear_directory(staging_dir)
-    else:
-        with rasterio.open(base_raster) as src:
-            raster_crs = src.crs
-        labels_source = _labels_for_crs(raster_crs)
-        logging.info("Exporting tiles to %s", tiles_dir)
-        geoai.export_geotiff_tiles(
-            in_raster=str(base_raster),
-            out_folder=str(tiles_dir),
-            in_class_data=str(labels_source),
-            tile_size=tile_size,
-            stride=stride,
-            buffer_radius=buffer_radius,
-        )
-        total_tiles = len(list(images_dir.glob("*.tif")))
-
-    try:
-        _clear_directory(staging_root)
-    except PermissionError:
-        logging.warning("Unable to remove staging directory %s; continuing.", staging_root)
-
-    if not images_dir.exists() or not any(images_dir.glob("*.tif")):
-        raise RuntimeError(
-            "No image tiles were generated. Check stack manifests and tiling parameters."
-        )
-    if not labels_dir.exists() or not any(labels_dir.glob("*.tif")):
-        raise RuntimeError(
-            "No label tiles were generated. Verify the label dataset overlaps the raster extent."
-        )
+        if not labels_dir.exists() or not any(labels_dir.glob("*.tif")):
+            raise RuntimeError(
+                "No label tiles were generated. Verify the label dataset overlaps the raster extent."
+            )
 
     logging.info(
         "Prepared %s tiles for training in %s (labels in %s)",
@@ -579,8 +600,8 @@ def train_unet(
         labels_dir,
     )
 
-    # Apply balanced sampling if enabled
-    if balanced_sampling:
+    # Apply balanced sampling if enabled (only when generating new tiles)
+    if balanced_sampling and not skip_tiling:
         if nwi_path is None:
             raise ValueError("nwi_path is required when balanced_sampling is enabled")
         if not nwi_path.exists():
@@ -723,6 +744,7 @@ def train_unet_from_config(config: TrainingConfig) -> None:
         num_workers=config.num_workers,
         checkpoint_path=config.checkpoint_path,
         resume_training=config.resume_training,
+        skip_tiling=config.skip_tiling,
         # Balanced sampling parameters
         balanced_sampling=config.sampling.enabled,
         nwi_path=config.sampling.nwi_path,

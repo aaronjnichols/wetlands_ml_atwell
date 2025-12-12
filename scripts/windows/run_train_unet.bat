@@ -7,11 +7,11 @@ cd /d "%~dp0..\.."
 REM ------------------------------------------------------------------
 REM Training Configuration
 REM ------------------------------------------------------------------
-set "STACK_MANIFEST=data\MI_Atwell\big\train\s2\manifest_index.json"
+set "STACK_MANIFEST=data\MI_Atwell\base_small_atwell_finetune\s2\manifest_index.json"
 set "TRAIN_RASTER="
-set "LABELS=data\MI_Atwell\big\train_wetlands_atwell.gpkg"
-set "TILES_DIR=data\MI_Atwell\big\train\s2\tiles"
-set "MODELS_DIR=data\MI_Atwell\big\train\s2\models"
+set "LABELS=data\MI_Atwell\base_small_atwell_finetune\train_wetlands_atwell.gpkg"
+set "TILES_DIR=data\MI_Atwell\base_small_atwell_finetune\s2\tiles"
+set "MODELS_DIR=data\MI_Atwell\base_small_atwell_finetune\models_finetune"
 
 REM Tiling
 set "TILE_SIZE=512"
@@ -28,15 +28,15 @@ set "NUM_CLASSES="
 
 REM Hyperparameters
 set "BATCH_SIZE=16"
-set "EPOCHS=10"
-set "LEARNING_RATE=0.0001"
-set "WEIGHT_DECAY=0.0001"
+set "EPOCHS=20"
+set "LEARNING_RATE=0.00003"
+set "WEIGHT_DECAY=0.00003"
 set "VAL_SPLIT=0.2"
 set "SEED=42"
 
 REM Balanced Sampling (NWI-filtered to avoid false negatives)
 set "BALANCED_SAMPLING=true"
-set "NWI_PATH=data\NWI\MI_Wetlands_Geopackage.gpkg"
+set "NWI_PATH=data\MI_Atwell\base_small_atwell_finetune\nwi_wetlands_clipped.gpkg"
 set "POSITIVE_NEGATIVE_RATIO=1.0"
 set "SAFE_ZONE_BUFFER=100.0"
 
@@ -46,9 +46,15 @@ set "RESIZE_MODE=resize"
 set "NUM_WORKERS=8"
 set "PLOT_CURVES=true"
 set "SAVE_BEST_ONLY=true"
-set "CHECKPOINT_PATH="
-set "RESUME_TRAINING=false"
 set "LOG_LEVEL=INFO"
+
+REM Fine-tuning / Resume Training
+REM   CHECKPOINT_PATH: Path to a trained model checkpoint (.pth) to load weights from
+REM   RESUME_TRAINING: Set to "true" to also restore optimizer state (continue interrupted training)
+REM   SKIP_TILING: Set to "true" to reuse existing tiles (useful for fine-tuning, avoids regenerating)
+set "CHECKPOINT_PATH=data\MI_Atwell\base_small_atwell_finetune\models\best_model.pth"
+set "RESUME_TRAINING=false"
+set "SKIP_TILING=false"
 
 REM ------------------------------------------------------------------
 REM Validation
@@ -104,6 +110,7 @@ if not "%CHECKPOINT_PATH%"=="" set "ARGS=%ARGS% --checkpoint-path "%CHECKPOINT_P
 if /I "%PLOT_CURVES%"=="true" set "ARGS=%ARGS% --plot-curves"
 if /I "%SAVE_BEST_ONLY%"=="false" set "ARGS=%ARGS% --save-all-checkpoints"
 if /I "%RESUME_TRAINING%"=="true" set "ARGS=%ARGS% --resume-training"
+if /I "%SKIP_TILING%"=="true" set "ARGS=%ARGS% --skip-tiling"
 
 REM Balanced sampling arguments
 if /I "%BALANCED_SAMPLING%"=="true" (

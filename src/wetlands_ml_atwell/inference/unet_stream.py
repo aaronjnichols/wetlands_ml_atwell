@@ -203,6 +203,7 @@ def _stream_inference(
     output_path: Path,
     context_label: str,
     legacy_normalization: bool = True,
+    valid_mask_channel_count: Optional[int] = None,
 ) -> float:
     window_h = min(window_size, height)
     window_w = min(window_size, width)
@@ -233,13 +234,21 @@ def _stream_inference(
                 data = read_window(win)
 
                 # Track which pixels have valid (non-nodata) data before normalization
-                # A pixel is valid only if ALL bands have non-nodata values.
-                # This is critical because some sources (e.g., NAIP) may not be clipped
-                # to the AOI polygon, while others (e.g., topography) are. Using np.all()
-                # ensures that if ANY band is nodata (like topography outside AOI),
-                # the pixel is masked out in the final predictions.
+                # IMPORTANT:
+                # - During training we replace nodata with 0 (see normalize_stack_array),
+                #   so the model learns to cope with missing channels (e.g., cloudy S2).
+                # - If we require ALL bands to be non-nodata here, then ANY missing band
+                #   (common for Sentinel-2 due to min_clear_obs) will force predictions
+                #   to 0, disproportionately removing small/linear features.
+                #
+                # For manifest stacks we therefore compute validity using only the first
+                # N channels (typically NAIP), which is the base grid used for tiling.
                 if nodata_value is not None:
-                    valid_mask = np.all(data != nodata_value, axis=0).astype(np.float32)
+                    if valid_mask_channel_count is not None and valid_mask_channel_count > 0:
+                        subset = data[:valid_mask_channel_count]
+                        valid_mask = np.any(subset != nodata_value, axis=0).astype(np.float32)
+                    else:
+                        valid_mask = np.all(data != nodata_value, axis=0).astype(np.float32)
                 else:
                     valid_mask = np.ones((data.shape[1], data.shape[2]), dtype=np.float32)
 
@@ -316,6 +325,10 @@ def infer_manifest(
         device=device,
     )
 
+    naip_band_count: Optional[int] = None
+    if manifest_obj.naip is not None:
+        naip_band_count = manifest_obj.naip.count
+
     with RasterStack(manifest_obj) as stack:
         elapsed = _stream_inference(
             read_window=stack.read_window,
@@ -334,6 +347,7 @@ def infer_manifest(
             output_path=output_path,
             context_label="Streaming UNet",
             legacy_normalization=legacy_normalization,
+            valid_mask_channel_count=naip_band_count,
         )
 
     logging.info("Streaming semantic inference finished in %.2f seconds", elapsed)

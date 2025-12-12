@@ -275,6 +275,12 @@ def add_common_training_args(parser: argparse.ArgumentParser) -> None:
         help="Resume optimizer/scheduler state from checkpoint (requires --checkpoint-path).",
     )
     parser.add_argument(
+        "--skip-tiling",
+        dest="skip_tiling",
+        action="store_true",
+        help="Skip tile generation and reuse existing tiles in tiles-dir. Useful for fine-tuning or resuming training.",
+    )
+    parser.add_argument(
         "--log-level",
         default=os.getenv("LOG_LEVEL", "INFO"),
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -343,7 +349,8 @@ def build_training_config(args: argparse.Namespace) -> TrainingConfig:
         if args.checkpoint_path:
             config.checkpoint_path = Path(args.checkpoint_path).expanduser().resolve()
         config.resume_training = args.resume_training
-        
+        config.skip_tiling = args.skip_tiling
+
         # Validate the final config
         config.validate()
         return config
@@ -398,8 +405,9 @@ def build_training_config(args: argparse.Namespace) -> TrainingConfig:
         plot_curves=args.plot_curves,
         checkpoint_path=Path(args.checkpoint_path).expanduser().resolve() if args.checkpoint_path else None,
         resume_training=args.resume_training,
+        skip_tiling=args.skip_tiling,
     )
-    
+
     return config
 
 

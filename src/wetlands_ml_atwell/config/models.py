@@ -206,6 +206,7 @@ class TrainingConfig:
         plot_curves: Generate training curves plot.
         checkpoint_path: Path to checkpoint to resume from.
         resume_training: Resume optimizer state from checkpoint.
+        skip_tiling: Skip tile generation and reuse existing tiles.
     """
     labels_path: Path
     train_raster: Optional[Path] = None
@@ -225,6 +226,7 @@ class TrainingConfig:
     plot_curves: bool = False
     checkpoint_path: Optional[Path] = None
     resume_training: bool = False
+    skip_tiling: bool = False
     
     def validate(self) -> None:
         """Validate training configuration.
