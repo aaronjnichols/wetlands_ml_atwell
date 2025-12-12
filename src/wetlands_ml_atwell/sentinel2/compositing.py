@@ -154,6 +154,27 @@ def _iter_aoi_processing(
         )
 
 
+def _deduplicate_paths(paths: Sequence[Path]) -> List[Path]:
+    """Remove duplicate paths by resolved absolute path.
+
+    Preserves order (first occurrence kept).
+
+    Args:
+        paths: Sequence of paths that may contain duplicates.
+
+    Returns:
+        List of unique paths.
+    """
+    seen: set = set()
+    unique: List[Path] = []
+    for path in paths:
+        resolved = path.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(path)
+    return unique
+
+
 def run_pipeline(
     aoi: str,
     years: Sequence[int],
@@ -195,22 +216,40 @@ def run_pipeline(
     geom = parse_aoi(aoi)
     client = Client.open(stac_url)
 
+    # Extract polygons BEFORE NAIP download to enable per-polygon downloading
+    # This avoids downloading unnecessary tiles in gaps between spatially separated AOIs
+    polygons = extract_aoi_polygons(geom)
+    if not polygons:
+        raise ValueError("No valid AOI polygons extracted.")
+
     if auto_download_naip:
         if naip_sources:
             logging.info("NAIP sources already provided; skipping auto download.")
         else:
-            # Use NaipService
-            naip_request = NaipDownloadRequest(
-                aoi=geom,
-                output_dir=output_dir / "naip_auto",
-                year=auto_download_naip_year,
-                max_items=auto_download_naip_max_items,
-                overwrite=auto_download_naip_overwrite,
-                preview=auto_download_naip_preview,
-                target_resolution=naip_target_resolution,
+            # Download NAIP per-polygon for efficiency (avoids downloading tiles in gaps)
+            naip_output_dir = output_dir / "naip_auto"
+            all_downloaded: List[Path] = []
+
+            for idx, polygon in enumerate(polygons, start=1):
+                LOGGER.info("Downloading NAIP for polygon %d/%d", idx, len(polygons))
+                naip_request = NaipDownloadRequest(
+                    aoi=polygon,  # Per-polygon, not union
+                    output_dir=naip_output_dir,  # Shared dir for deduplication
+                    year=auto_download_naip_year,
+                    max_items=auto_download_naip_max_items,
+                    overwrite=auto_download_naip_overwrite,
+                    preview=auto_download_naip_preview,
+                    target_resolution=naip_target_resolution,
+                )
+                downloaded = NaipService().download(naip_request)
+                all_downloaded.extend(downloaded)
+
+            # Deduplicate paths (geoai deduplicates by filename, but paths may repeat)
+            naip_sources = _deduplicate_paths(all_downloaded)
+            LOGGER.info(
+                "Downloaded %d unique NAIP tiles for %d polygons",
+                len(naip_sources), len(polygons)
             )
-            downloaded_naip = NaipService().download(naip_request)
-            naip_sources.extend(downloaded_naip)
 
     has_naip = bool(naip_sources)
 
@@ -233,9 +272,7 @@ def run_pipeline(
         wetlands_path = WetlandsService().download(wetlands_request)
         logging.info("Wetlands delineations saved to %s", wetlands_path)
 
-    polygons = extract_aoi_polygons(geom)
-    if not polygons:
-        raise ValueError("No valid AOI polygons extracted.")
+    # polygons already extracted before NAIP download (line 221)
 
     # Resolve chunk size for dask processing
     from .stac_client import compute_chunk_size
